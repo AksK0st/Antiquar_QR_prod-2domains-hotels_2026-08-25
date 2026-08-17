@@ -45,7 +45,7 @@ async def main() -> int:
     try:
         for obj in minio_client.list_objects(MINIO_BUCKET, recursive=True):
             storage[obj.object_name] = obj
-    except S3Error as exc:
+    except (S3Error, OSError) as exc:
         print(f"ERROR: could not list object storage: {exc}")
         return 2
 
@@ -76,7 +76,7 @@ async def main() -> int:
         for name in deletable:
             try:
                 minio_client.remove_object(MINIO_BUCKET, name)
-            except S3Error as exc:
+            except (S3Error, OSError) as exc:
                 print(f"  DELETE_FAILED {name}: {exc}")
                 return 2
             print(f"  DELETED {name}")

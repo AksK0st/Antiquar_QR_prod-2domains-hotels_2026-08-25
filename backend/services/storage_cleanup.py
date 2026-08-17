@@ -44,7 +44,14 @@ async def delete_object_or_enqueue(db: AsyncSession, object_name: str) -> bool:
             )
         )
         return True
-    except (S3Error, OSError) as exc:
+    except Exception as exc:
         logger.exception("Object cleanup failed: %s", object_name)
-        await enqueue_cleanup(db, object_name, exc)
+        try:
+            await enqueue_cleanup(db, object_name, exc)
+        except Exception:
+            await db.rollback()
+            logger.exception(
+                "Failed to persist cleanup job; reconciliation must recover object: %s",
+                object_name,
+            )
         return False

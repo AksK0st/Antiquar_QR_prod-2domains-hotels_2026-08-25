@@ -64,3 +64,36 @@ def test_production_accepts_real_host_and_non_placeholder_secrets() -> None:
         public_base_url="https://museum.example-museum.ru",
     )
     assert settings.public_origin == "https://museum.example-museum.ru"
+
+
+def test_production_rejects_base_path_and_invalid_bucket() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            **BASE,
+            app_env="production",
+            public_base_url="https://museum.example-museum.ru/catalog",
+        )
+
+    broken = dict(BASE)
+    broken["minio_bucket"] = "bad..bucket"
+    with pytest.raises(ValidationError):
+        Settings(
+            **broken,
+            app_env="production",
+            public_base_url="https://museum.example-museum.ru",
+        )
+
+
+def test_minio_bucket_rejects_uppercase_and_ip_like_name() -> None:
+    broken = dict(BASE)
+    broken["minio_bucket"] = "Bad-Bucket"
+    with pytest.raises(ValidationError):
+        Settings(**broken)
+
+    broken["minio_bucket"] = "192.168.1.1"
+    with pytest.raises(ValidationError):
+        Settings(
+            **broken,
+            app_env="production",
+            public_base_url="https://museum.example-museum.ru",
+        )

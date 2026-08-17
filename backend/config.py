@@ -61,7 +61,11 @@ class Settings(BaseSettings):
     minio_endpoint: str
     minio_access_key: SecretStr
     minio_secret_key: SecretStr
-    minio_bucket: str
+    minio_bucket: str = Field(
+        min_length=3,
+        max_length=63,
+        pattern=r"^[a-z0-9][a-z0-9.-]*[a-z0-9]$",
+    )
     minio_secure: bool = False
     minio_connect_timeout_seconds: float = Field(default=3.0, gt=0, le=60)
     minio_read_timeout_seconds: float = Field(default=15.0, gt=0, le=300)
@@ -93,6 +97,13 @@ class Settings(BaseSettings):
                 raise ValueError("PUBLIC_BASE_URL must use a real production hostname")
             if parsed.username or parsed.password or parsed.query or parsed.fragment:
                 raise ValueError("PUBLIC_BASE_URL must be a clean application URL without credentials/query/fragment")
+            if parsed.path not in {"", "/"}:
+                raise ValueError("PUBLIC_BASE_URL must point to the application root in production")
+
+            if ".." in self.minio_bucket or ".-" in self.minio_bucket or "-." in self.minio_bucket:
+                raise ValueError("MINIO_BUCKET has invalid dot/hyphen placement")
+            if all(part.isdigit() for part in self.minio_bucket.split(".")):
+                raise ValueError("MINIO_BUCKET must not look like an IP address")
 
             required_secrets = {
                 "POSTGRES_PASSWORD": self.postgres_password.get_secret_value(),

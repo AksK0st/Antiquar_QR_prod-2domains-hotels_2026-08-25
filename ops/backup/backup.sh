@@ -14,10 +14,18 @@ BACKUP_DIR=$(require_compose_env BACKUP_DIR)
 POSTGRES_DB=$(require_compose_env POSTGRES_DB)
 POSTGRES_USER=$(require_compose_env POSTGRES_USER)
 MINIO_BUCKET=$(require_compose_env MINIO_BUCKET)
+RELEASE_TAG=$(compose_env_value RELEASE_TAG 2>/dev/null || printf 'unknown')
+BACKUP_APPLY_RETENTION=$(compose_env_value BACKUP_APPLY_RETENTION 2>/dev/null || printf '1')
+case "$BACKUP_APPLY_RETENTION" in 0|1) ;; *) echo "BACKUP_APPLY_RETENTION must be 0 or 1" >&2; exit 1;; esac
 case "$BACKUP_DIR" in /*) ;; *) echo "BACKUP_DIR must be absolute" >&2; exit 1;; esac
-mkdir -p "$BACKUP_DIR"
+[ -d "$BACKUP_DIR" ] || { echo "BACKUP_DIR must already exist and be mounted: $BACKUP_DIR" >&2; exit 1; }
+[ -w "$BACKUP_DIR" ] || { echo "BACKUP_DIR is not writable: $BACKUP_DIR" >&2; exit 1; }
 BACKUP_DIR=$(CDPATH= cd -- "$BACKUP_DIR" && pwd)
 case "$BACKUP_DIR" in "$PROJECT_ROOT"|"$PROJECT_ROOT"/*) echo "BACKUP_DIR must not live inside the application checkout" >&2; exit 1;; esac
+PROJECT_FS=$(df -P "$PROJECT_ROOT" | awk 'NR==2 {print $1}')
+BACKUP_FS=$(df -P "$BACKUP_DIR" | awk 'NR==2 {print $1}')
+[ -n "$PROJECT_FS" ] && [ -n "$BACKUP_FS" ] || { echo "Could not determine backup filesystem" >&2; exit 1; }
+[ "$PROJECT_FS" != "$BACKUP_FS" ] || { echo "BACKUP_DIR must be on a different filesystem from the application checkout" >&2; exit 1; }
 
 STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 DEST="$BACKUP_DIR/$STAMP"
@@ -48,7 +56,13 @@ BACKUP_DIR="$BACKUP_DIR" compose --profile maintenance run --rm --no-deps \
   'mc alias set local http://minio:9000 "$MINIO_APP_USER" "$MINIO_APP_PASSWORD" >/dev/null && mc mirror --overwrite "local/$MINIO_BUCKET" "/backup/'"$STAMP"'/objects"'
 
 echo "[3/3] Manifest and checksums"
-printf 'created_at_utc=%s\npostgres_db=%s\nminio_bucket=%s\n' "$STAMP" "$POSTGRES_DB" "$MINIO_BUCKET" > "$DEST/manifest.txt"
+DB_REVISION=$(
+  compose exec -T db sh -ec \
+    'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atc "SELECT version_num FROM alembic_version LIMIT 1"' \
+    2>/dev/null || printf 'uninitialized'
+)
+printf 'backup_format=1\ncreated_at_utc=%s\nconfigured_release_tag=%s\ndatabase_revision=%s\npostgres_db=%s\nminio_bucket=%s\n' \
+  "$STAMP" "$RELEASE_TAG" "$DB_REVISION" "$POSTGRES_DB" "$MINIO_BUCKET" > "$DEST/manifest.txt"
 (
   cd "$DEST"
   find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
@@ -57,6 +71,6 @@ printf 'created_at_utc=%s\npostgres_db=%s\nminio_bucket=%s\n' "$STAMP" "$POSTGRE
 trap - EXIT INT TERM
 echo "Backup complete: $DEST"
 
-if [ "${BACKUP_APPLY_RETENTION:-1}" = "1" ]; then
+if [ "$BACKUP_APPLY_RETENTION" = "1" ]; then
   python3 "$PROJECT_ROOT/ops/backup/retention.py" "$BACKUP_DIR"
 fi

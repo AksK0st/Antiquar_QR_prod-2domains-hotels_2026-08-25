@@ -223,7 +223,11 @@ async def delete_item(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    item = await db.get(Item, item_id)
+    # Use the same item row lock as image upload/reorder/delete so a concurrent
+    # image mutation cannot commit metadata after we captured the object list.
+    item = (
+        await db.execute(select(Item).where(Item.id == item_id).with_for_update())
+    ).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 

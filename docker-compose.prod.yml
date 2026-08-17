@@ -263,7 +263,7 @@ services:
     build:
       context: ./backend
     environment: *backend-env
-    command: ["python", "scripts/reconcile_storage.py"]
+    command: ["python", "scripts/reconcile_storage.py", "--delete-orphans", "--grace-hours", "24"]
     depends_on:
       db:
         condition: service_healthy

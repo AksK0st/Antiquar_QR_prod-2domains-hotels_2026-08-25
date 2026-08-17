@@ -137,13 +137,15 @@ Deploy:
 
 The script:
 
-1. validates environment/compose;
+1. validates environment/compose and verifies that backup storage is mounted on a different filesystem;
 2. builds tagged backend/frontend images;
-3. starts PostgreSQL and MinIO;
+3. starts PostgreSQL and MinIO and waits for PostgreSQL readiness;
 4. creates/updates the restricted MinIO app user and bucket policy;
-5. applies Alembic migrations;
-6. starts backend/frontend/gateway;
-7. checks public readiness when `curl` is available.
+5. briefly stops application traffic and creates a pre-migration PostgreSQL + MinIO backup;
+6. applies Alembic migrations;
+7. starts backend/frontend/gateway and checks public readiness.
+
+If backup fails before migrations start, the script attempts to restart the previously deployed backend/gateway containers. Once migrations have started, rollback is intentionally manual because schema compatibility must be assessed rather than guessed.
 
 After deployment verify with a physical phone over mobile Internet:
 
@@ -167,7 +169,7 @@ Keep old application images until the release has been stable long enough to mak
 
 ## Backup
 
-Create a backup:
+Create a backup (the directory must already be mounted, writable and on a different filesystem from the checkout):
 
 ```bash
 BACKUP_DIR=/mnt/offhost/antiquar ./ops/backup/backup.sh
@@ -182,7 +184,7 @@ The backup contains:
 
 After a successful backup the retention job keeps the seven newest backups plus one backup for each of the previous four ISO weeks by default. Disable automatic pruning for a run with `BACKUP_APPLY_RETENTION=0`.
 
-A Docker volume on the same server is **not** considered a backup. The production `BACKUP_DIR` must be on separate/off-host storage.
+A Docker volume or ordinary directory on the same application filesystem is **not** considered a backup. The production `BACKUP_DIR` must be a pre-mounted separate/off-host filesystem; the scripts fail closed instead of silently creating a local fallback directory. Application secrets are deliberately **not** copied into these backups and must be backed up separately in a password manager/secret store.
 
 ### Restore
 
@@ -209,9 +211,10 @@ It:
 
 1. removes expired admin sessions;
 2. retries durable MinIO cleanup jobs;
-3. checks DB ↔ object-storage consistency and primary-image invariants.
+3. checks DB ↔ object-storage consistency and primary-image invariants;
+4. removes MinIO objects that have had no DB record for at least 24 hours.
 
-Any unresolved cleanup/reconciliation problem produces a non-zero exit code so a timer/monitor can alert on it.
+The grace period protects uploads that may still be in flight. Any unresolved cleanup/reconciliation problem produces a non-zero exit code so a timer/monitor can alert on it.
 
 Example systemd units are in `ops/systemd/`. They assume checkout path `/opt/antiquar`; edit `WorkingDirectory`, `ExecStart` and environment paths if deployment uses another directory.
 
