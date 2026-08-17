@@ -6,11 +6,14 @@ ENV_FILE=${ENV_FILE:-"$PROJECT_ROOT/.env.production"}
 COMPOSE_FILE=${COMPOSE_FILE:-"$PROJECT_ROOT/docker-compose.prod.yml"}
 
 [ -f "$ENV_FILE" ] || { echo "Missing env file: $ENV_FILE" >&2; exit 1; }
-set -a
-. "$ENV_FILE"
-set +a
+# shellcheck source=../lib/env.sh
+. "$PROJECT_ROOT/ops/lib/env.sh"
+load_compose_env
 
-: "${BACKUP_DIR:?Set BACKUP_DIR to an absolute off-host/mounted backup path}"
+BACKUP_DIR=$(require_compose_env BACKUP_DIR)
+POSTGRES_DB=$(require_compose_env POSTGRES_DB)
+POSTGRES_USER=$(require_compose_env POSTGRES_USER)
+MINIO_BUCKET=$(require_compose_env MINIO_BUCKET)
 case "$BACKUP_DIR" in /*) ;; *) echo "BACKUP_DIR must be absolute" >&2; exit 1;; esac
 mkdir -p "$BACKUP_DIR"
 BACKUP_DIR=$(CDPATH= cd -- "$BACKUP_DIR" && pwd)
@@ -35,8 +38,9 @@ cleanup_failed() {
 trap cleanup_failed EXIT INT TERM
 
 echo "[1/3] PostgreSQL dump"
-compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
-  pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc > "$DEST/database.dump"
+compose exec -T db sh -ec \
+  'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' \
+  > "$DEST/database.dump"
 
 echo "[2/3] Object storage mirror"
 BACKUP_DIR="$BACKUP_DIR" compose --profile maintenance run --rm --no-deps \

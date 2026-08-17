@@ -12,10 +12,10 @@ PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 ENV_FILE=${ENV_FILE:-"$PROJECT_ROOT/.env.production"}
 COMPOSE_FILE=${COMPOSE_FILE:-"$PROJECT_ROOT/docker-compose.prod.yml"}
 [ -f "$ENV_FILE" ] || { echo "Missing env file: $ENV_FILE" >&2; exit 1; }
-set -a
-. "$ENV_FILE"
-set +a
-: "${BACKUP_DIR:?Set BACKUP_DIR to the backup root}"
+# shellcheck source=../lib/env.sh
+. "$PROJECT_ROOT/ops/lib/env.sh"
+load_compose_env
+BACKUP_DIR=$(require_compose_env BACKUP_DIR)
 
 STAMP=$1
 SRC="$BACKUP_DIR/$STAMP"
@@ -32,8 +32,9 @@ echo "Stopping traffic and application writes..."
 compose stop gateway backend || true
 
 echo "Restoring PostgreSQL..."
-compose exec -T -e PGPASSWORD="$POSTGRES_PASSWORD" db \
-  pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-acl < "$SRC/database.dump"
+compose exec -T db sh -ec \
+  'PGPASSWORD="$POSTGRES_PASSWORD" exec pg_restore -U "$POSTGRES_USER" -d "$POSTGRES_DB" --clean --if-exists --no-owner --no-acl' \
+  < "$SRC/database.dump"
 
 echo "Restoring object storage..."
 BACKUP_DIR="$BACKUP_DIR" compose --profile maintenance run --rm --no-deps \

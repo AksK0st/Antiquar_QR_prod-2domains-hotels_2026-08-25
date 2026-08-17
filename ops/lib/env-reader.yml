@@ -1,0 +1,4 @@
+services:
+  env-reader:
+    image: busybox:1.37.0-musl
+    command: ["true"]
