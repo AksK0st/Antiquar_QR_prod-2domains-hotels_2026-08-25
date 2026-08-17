@@ -9,3 +9,4 @@ class PublicItemImageRead(BaseModel):
     is_primary: bool
     width: int | None = None
     height: int | None = None
+    content_version: int

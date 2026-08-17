@@ -26,7 +26,9 @@ def test_patch_rejects_null_required_fields() -> None:
 
 def test_public_image_schema_does_not_expose_internal_metadata() -> None:
     fields = set(PublicItemImageRead.model_fields)
-    assert fields == {"id", "sort_order", "is_primary", "width", "height"}
+    assert fields == {
+        "id", "sort_order", "is_primary", "width", "height", "content_version"
+    }
     assert "object_name" not in fields
     assert "original_filename" not in fields
 

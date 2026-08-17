@@ -11,6 +11,7 @@ class AdminItemImageResponse(BaseModel):
     size: int | None
     width: int | None
     height: int | None
+    content_version: int
     sort_order: int
     is_primary: bool
 

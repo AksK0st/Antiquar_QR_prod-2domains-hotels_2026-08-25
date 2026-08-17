@@ -53,6 +53,10 @@ async def run(apply: bool) -> int:
                     declared_content_type=image.content_type,
                     max_pixels=settings.admin_image_max_pixels,
                 )
+                if processed.size > settings.admin_image_max_bytes:
+                    raise ImageTooLargeError(
+                        f"sanitized object exceeds {settings.admin_image_max_bytes} bytes"
+                    )
             except (S3Error, OSError, InvalidImageError, ImageTooLargeError) as exc:
                 print(f"[ERROR] id={image.id} {image.object_name}: {exc}")
                 failed += 1
@@ -89,6 +93,7 @@ async def run(apply: bool) -> int:
                 image.width = processed.width
                 image.height = processed.height
                 image.content_type = processed.content_type
+                image.content_version += 1
 
         if apply:
             await db.commit()

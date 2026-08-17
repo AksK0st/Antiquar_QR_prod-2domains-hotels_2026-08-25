@@ -93,6 +93,12 @@ async def upload_item_image(
         await file.close()
         raise HTTPException(status_code=415, detail="Invalid image file") from exc
 
+    # Re-encoding may produce a larger payload than the uploaded source. Limit
+    # the actual object that will be persisted, not only the incoming request.
+    if processed.size > settings.admin_image_max_bytes:
+        await file.close()
+        raise HTTPException(status_code=413, detail="Processed image file is too large")
+
     original_filename = (file.filename or "image").replace("\\", "/").split("/")[-1][:255]
     object_name = f"items/{item_id}/{uuid4().hex}{processed.extension}"
 

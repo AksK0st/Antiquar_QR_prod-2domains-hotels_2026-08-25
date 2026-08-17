@@ -155,6 +155,7 @@ function ItemGallery({
           src={getItemImageByIdUrl(
             slug,
             activeImage.id,
+            activeImage.content_version,
           )}
           alt={`${name} — фото ${activeIndex + 1}`}
           width={activeImage.width ?? undefined}
@@ -288,6 +289,7 @@ function ItemGallery({
                     src={getItemImageByIdUrl(
                       slug,
                       image.id,
+                      image.content_version,
                     )}
                     alt=""
                     loading="lazy"

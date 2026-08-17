@@ -31,7 +31,7 @@ def _storage_error(exc: S3Error, object_name: str) -> HTTPException:
 
 
 async def _stream_image(image: ItemImage, request: Request, *, immutable: bool):
-    etag = f'"image-{image.id}-{image.size or 0}"'
+    etag = f'"image-{image.id}-v{image.content_version}-{image.size or 0}"'
     cache_control = (
         "public, max-age=31536000, immutable"
         if immutable

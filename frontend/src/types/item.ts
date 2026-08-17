@@ -4,6 +4,7 @@ export interface ItemImage {
   is_primary: boolean
   width: number | null
   height: number | null
+  content_version: number
 }
 
 export interface ItemSummary {

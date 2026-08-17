@@ -18,6 +18,7 @@ class ItemImage(Base):
         CheckConstraint("size IS NULL OR size >= 0", name="ck_item_images_size_nonnegative"),
         CheckConstraint("width IS NULL OR width > 0", name="ck_item_images_width_positive"),
         CheckConstraint("height IS NULL OR height > 0", name="ck_item_images_height_positive"),
+        CheckConstraint("content_version >= 1", name="ck_item_images_content_version_positive"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -30,6 +31,9 @@ class ItemImage(Base):
     size: Mapped[int | None] = mapped_column(Integer, nullable=True)
     width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    content_version: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
+    )
     sort_order: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )

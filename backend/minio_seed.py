@@ -76,6 +76,10 @@ def ensure_minio_object(relative_path: str) -> tuple[str, str, int, int, int]:
         )
     except (InvalidImageError, ImageTooLargeError) as exc:
         raise RuntimeError(f"Invalid seed media {file_path}: {exc}") from exc
+    if processed.size > settings.admin_image_max_bytes:
+        raise RuntimeError(
+            f"Sanitized seed media exceeds {settings.admin_image_max_bytes} bytes: {file_path}"
+        )
 
     # Keep manifest object names stable, but always overwrite seed objects with
     # sanitized bytes. This also upgrades objects created by older seed code
@@ -132,6 +136,9 @@ async def ensure_image_record(
         existing.size = size
         existing.width = width
         existing.height = height
+        # Seed objects are deliberately overwritten with sanitized bytes, so
+        # advance the cache key even when dimensions/size happen to be equal.
+        existing.content_version += 1
         print(f"[DB UPDATE] {object_name}")
         return
 

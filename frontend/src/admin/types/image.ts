@@ -6,6 +6,7 @@ export interface AdminItemImage {
   size: number | null
   width: number | null
   height: number | null
+  content_version: number
   sort_order: number
   is_primary: boolean
 }
