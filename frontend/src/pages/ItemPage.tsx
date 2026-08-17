@@ -83,7 +83,7 @@ function ItemPage() {
       <main className="flex min-h-[70vh] items-center justify-center bg-[#efe9de] px-6">
         <div className="text-center">
 
-          <p className="text-lg text-[#6e332c]">
+          <p role="alert" aria-live="polite" className="text-lg text-[#6e332c]">
             {error ?? 'Предмет не найден'}
           </p>
 
@@ -250,7 +250,7 @@ function ItemPage() {
               )}
 
 
-              {(item.period_from || item.period_to) && (
+              {(item.period_from !== null || item.period_to !== null) && (
                 <div className="
                   grid
                   gap-1
@@ -263,7 +263,7 @@ function ItemPage() {
                   </dt>
 
                   <dd className="text-base leading-7 text-[#302b25]">
-                    {item.period_from && item.period_to
+                    {item.period_from !== null && item.period_to !== null
                       ? `${item.period_from}–${item.period_to}`
                       : item.period_from ?? item.period_to}
                   </dd>

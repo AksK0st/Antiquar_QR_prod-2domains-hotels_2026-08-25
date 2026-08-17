@@ -230,17 +230,6 @@ function AdminCollectionFormPage() {
         return
       }
 
-      if (
-        error instanceof Error &&
-        error.message === 'SLUG_CONFLICT'
-      ) {
-        setError(
-          'Такой slug уже используется другой коллекцией.',
-        )
-
-        return
-      }
-
       if (error instanceof Error && error.message === 'VERSION_CONFLICT') {
         setError('Коллекция уже изменена в другой вкладке. Перезагрузите страницу.')
       } else if (error instanceof Error && error.message === 'SLUG_CONFLICT') {
@@ -287,7 +276,7 @@ function AdminCollectionFormPage() {
       </div>
 
       {error && (
-        <p className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        <p role="alert" aria-live="polite" className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
           {error}
         </p>
       )}

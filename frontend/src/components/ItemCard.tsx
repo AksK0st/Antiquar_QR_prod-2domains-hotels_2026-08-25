@@ -12,7 +12,7 @@ interface ItemCardProps {
 function ItemCard({ item }: ItemCardProps) {
   return (
     <Link
-      to={`/items/${item.slug}`}
+      to={`/i/${item.public_id}`}
       className="group block"
     >
 

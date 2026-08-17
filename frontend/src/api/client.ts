@@ -45,13 +45,39 @@ function combineSignal(
   }
 }
 
+function errorDetailToString(value: unknown): string | null {
+  if (typeof value === 'string') {
+    return value
+  }
+
+  if (Array.isArray(value)) {
+    const messages = value
+      .map((entry) => {
+        if (typeof entry === 'string') return entry
+        if (entry && typeof entry === 'object' && 'msg' in entry) {
+          const message = (entry as { msg?: unknown }).msg
+          return typeof message === 'string' ? message : null
+        }
+        return null
+      })
+      .filter((message): message is string => Boolean(message))
+
+    return messages.length > 0 ? messages.join('; ') : null
+  }
+
+  if (value && typeof value === 'object' && 'msg' in value) {
+    const message = (value as { msg?: unknown }).msg
+    return typeof message === 'string' ? message : null
+  }
+
+  return null
+}
+
 async function parseError(response: Response): Promise<ApiError> {
   let detail: string | null = null
   try {
     const payload = await response.json() as { detail?: unknown }
-    if (typeof payload.detail === 'string') {
-      detail = payload.detail
-    }
+    detail = errorDetailToString(payload.detail)
   } catch {
     // Error bodies are not guaranteed to be JSON.
   }
