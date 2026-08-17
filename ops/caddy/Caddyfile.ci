@@ -1,0 +1,10 @@
+:80 {
+    encode gzip
+    request_body {
+        max_size 2MB
+    }
+
+    @backend path /api/* /health /health/*
+    reverse_proxy @backend backend:8000
+    reverse_proxy frontend:8080
+}

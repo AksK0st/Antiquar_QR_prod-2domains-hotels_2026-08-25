@@ -1,0 +1,13 @@
+GET     /health
+
+GET     /api/collections/
+POST    /api/collections/
+GET     /api/collections/{id}
+PATCH   /api/collections/{id}
+DELETE  /api/collections/{id}
+
+GET     /api/items/
+POST    /api/items/
+GET     /api/items/{id}
+PATCH   /api/items/{id}
+DELETE  /api/items/{id}

@@ -1,0 +1,31 @@
+{$DOMAIN} {
+    encode zstd gzip
+
+    request_body {
+        max_size 16MB
+    }
+
+    header {
+        -Server
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        X-Frame-Options "DENY"
+        Permissions-Policy "camera=(), microphone=(), geolocation=()"
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        Content-Security-Policy "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
+    }
+
+    @backend path /api/* /health /health/*
+    reverse_proxy @backend backend:8000 {
+        health_uri /health/ready
+        health_interval 15s
+        health_timeout 3s
+        lb_try_duration 5s
+        transport http {
+            dial_timeout 3s
+            response_header_timeout 30s
+        }
+    }
+
+    reverse_proxy frontend:8080
+}

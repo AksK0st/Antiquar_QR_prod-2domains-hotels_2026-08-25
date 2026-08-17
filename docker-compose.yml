@@ -1,0 +1,124 @@
+services:
+  db:
+    image: postgres:17.10-alpine3.24
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+    ports:
+      - "5432:5432"
+
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+
+  backend:
+    build:
+      context: ./backend
+
+    environment:
+      APP_ENV: ${APP_ENV:-development}
+      SQL_ECHO: ${SQL_ECHO:-false}
+
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST: db
+      POSTGRES_PORT: 5432
+
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-12}
+      ADMIN_IMAGE_MAX_BYTES: ${ADMIN_IMAGE_MAX_BYTES:-15728640}
+      ADMIN_IMAGE_MAX_PIXELS: ${ADMIN_IMAGE_MAX_PIXELS:-40000000}
+      ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS: ${ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS:-5}
+      ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS:-60}
+      ADMIN_LOGIN_BLOCK_SECONDS: ${ADMIN_LOGIN_BLOCK_SECONDS:-300}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-5}
+      POSTGRES_MAX_OVERFLOW: ${POSTGRES_MAX_OVERFLOW:-5}
+      POSTGRES_POOL_TIMEOUT_SECONDS: ${POSTGRES_POOL_TIMEOUT_SECONDS:-10}
+      POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-15000}
+
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+      MINIO_SECURE: ${MINIO_SECURE}
+      MINIO_CONNECT_TIMEOUT_SECONDS: ${MINIO_CONNECT_TIMEOUT_SECONDS:-3}
+      MINIO_READ_TIMEOUT_SECONDS: ${MINIO_READ_TIMEOUT_SECONDS:-10}
+
+    volumes:
+      - ./backend:/backend
+
+    ports:
+      - "8000:8000"
+
+    depends_on:
+      db:
+        condition: service_healthy
+
+      minio:
+        condition: service_started
+
+    command: >
+      sh -c "
+      alembic upgrade head &&
+      python seed.py &&
+      python minio_seed.py &&
+      uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+      "
+
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-10-15T17-29-55Z
+    command: server /data --console-address ":9001"
+
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+    volumes:
+      - minio_data:/data
+
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  frontend:
+    build:
+      context: ./frontend
+
+    volumes:
+      - ./frontend:/app
+      - frontend_node_modules:/app/node_modules
+
+    ports:
+      - "5173:5173"
+
+    depends_on:
+      - backend
+
+    command:
+      - npm
+      - run
+      - dev
+      - --
+      - --host
+      - 0.0.0.0
+
+
+volumes:
+  postgres_data:
+  minio_data:
+  frontend_node_modules:

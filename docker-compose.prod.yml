@@ -1,0 +1,247 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
+x-backend-env: &backend-env
+  APP_ENV: production
+  SQL_ECHO: "false"
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  POSTGRES_DB: ${POSTGRES_DB}
+  POSTGRES_USER: ${POSTGRES_USER}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  POSTGRES_HOST: db
+  POSTGRES_PORT: "5432"
+  PUBLIC_BASE_URL: https://${DOMAIN}
+  CORS_ORIGINS: ""
+  ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-12}
+  ADMIN_IMAGE_MAX_BYTES: ${ADMIN_IMAGE_MAX_BYTES:-15728640}
+  ADMIN_IMAGE_MAX_PIXELS: ${ADMIN_IMAGE_MAX_PIXELS:-40000000}
+  ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS: ${ADMIN_LOGIN_RATE_LIMIT_ATTEMPTS:-5}
+  ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS: ${ADMIN_LOGIN_RATE_LIMIT_WINDOW_SECONDS:-60}
+  ADMIN_LOGIN_BLOCK_SECONDS: ${ADMIN_LOGIN_BLOCK_SECONDS:-300}
+  POSTGRES_POOL_SIZE: ${POSTGRES_POOL_SIZE:-10}
+  POSTGRES_MAX_OVERFLOW: ${POSTGRES_MAX_OVERFLOW:-10}
+  POSTGRES_POOL_TIMEOUT_SECONDS: ${POSTGRES_POOL_TIMEOUT_SECONDS:-10}
+  POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-15000}
+  MINIO_ENDPOINT: minio:9000
+  MINIO_ACCESS_KEY: ${MINIO_APP_USER}
+  MINIO_SECRET_KEY: ${MINIO_APP_PASSWORD}
+  MINIO_BUCKET: ${MINIO_BUCKET}
+  MINIO_SECURE: "false"
+  MINIO_CONNECT_TIMEOUT_SECONDS: ${MINIO_CONNECT_TIMEOUT_SECONDS:-3}
+  MINIO_READ_TIMEOUT_SECONDS: ${MINIO_READ_TIMEOUT_SECONDS:-10}
+
+services:
+  db:
+    image: postgres:17.10-alpine3.24
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks: [internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 768m
+    cpus: 1.0
+    security_opt: ["no-new-privileges:true"]
+
+  minio:
+    build:
+      context: .
+      dockerfile: ops/minio/Dockerfile
+    command: server /data
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          rm -rf /tmp/mc-health &&
+          mc --config-dir /tmp/mc-health alias set health http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 &&
+          mc --config-dir /tmp/mc-health ready health >/dev/null 2>&1
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
+    volumes:
+      - minio_data:/data
+    networks: [internal]
+    restart: unless-stopped
+    logging: *default-logging
+    mem_limit: 512m
+    cpus: 1.0
+    security_opt: ["no-new-privileges:true"]
+
+  minio-init:
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks: [internal]
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_APP_USER: ${MINIO_APP_USER}
+      MINIO_APP_PASSWORD: ${MINIO_APP_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - ./ops/minio:/config:ro
+    entrypoint: ["/bin/sh", "-ec"]
+    command: >-
+      until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && mc ready local >/dev/null 2>&1; do sleep 2; done;
+      mc mb --ignore-existing "local/$${MINIO_BUCKET}";
+      sed "s/__BUCKET__/$${MINIO_BUCKET}/g" /config/app-policy.template.json > /tmp/app-policy.json;
+      mc admin user add local "$${MINIO_APP_USER}" "$${MINIO_APP_PASSWORD}" || true;
+      mc admin policy create local antiquar-app /tmp/app-policy.json;
+      mc admin policy attach local antiquar-app --user "$${MINIO_APP_USER}" || true
+    restart: "no"
+    logging: *default-logging
+    security_opt: ["no-new-privileges:true"]
+
+  migrate:
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  backend:
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+    mem_limit: 768m
+    cpus: 1.5
+    stop_grace_period: 20s
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3).read()
+      interval: 10s
+      timeout: 4s
+      retries: 6
+      start_period: 10s
+
+  frontend:
+    image: antiquar-frontend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./frontend
+      args:
+        VITE_PUBLIC_BASE_URL: https://${DOMAIN}
+    networks: [internal]
+    restart: unless-stopped
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 2 -O /dev/null http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s
+
+  gateway:
+    image: caddy:2.11.4-alpine
+    environment:
+      DOMAIN: ${DOMAIN}
+    volumes:
+      - ./ops/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    networks: [edge, internal]
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    restart: unless-stopped
+    security_opt: ["no-new-privileges:true"]
+    logging: *default-logging
+    mem_limit: 256m
+    cpus: 0.75
+
+  seed:
+    profiles: ["seed"]
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    command: ["/bin/sh", "-ec", "python seed.py && python minio_seed.py"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+
+  minio-tools:
+    profiles: ["maintenance"]
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    environment:
+      MINIO_APP_USER: ${MINIO_APP_USER}
+      MINIO_APP_PASSWORD: ${MINIO_APP_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET}
+    volumes:
+      - ${BACKUP_DIR:-./backups}:/backup
+    networks: [internal]
+    entrypoint: ["/bin/sh", "-ec"]
+    command: ["echo maintenance tool"]
+    restart: "no"
+    security_opt: ["no-new-privileges:true"]
+
+
+networks:
+  edge:
+  internal:
+    internal: true
+
+volumes:
+  postgres_data:
+  minio_data:
+  caddy_data:
+  caddy_config:
