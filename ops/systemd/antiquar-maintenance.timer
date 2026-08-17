@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Antiquar QR maintenance
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=antiquar-maintenance.service
+
+[Install]
+WantedBy=timers.target

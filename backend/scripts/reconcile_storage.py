@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from minio.error import S3Error
@@ -19,7 +20,26 @@ async def main() -> int:
     args = parser.parse_args()
 
     async with SessionLocal() as db:
-        db_objects = set((await db.execute(select(ItemImage.object_name))).scalars().all())
+        rows = (
+            await db.execute(
+                select(
+                    ItemImage.item_id,
+                    ItemImage.object_name,
+                    ItemImage.is_primary,
+                )
+            )
+        ).all()
+
+    db_objects = {row.object_name for row in rows}
+    images_by_item: dict[int, list[bool]] = defaultdict(list)
+    for row in rows:
+        images_by_item[row.item_id].append(row.is_primary)
+
+    primary_anomalies: list[tuple[int, int, int]] = []
+    for item_id, primary_flags in images_by_item.items():
+        primary_count = sum(primary_flags)
+        if primary_count != 1:
+            primary_anomalies.append((item_id, len(primary_flags), primary_count))
 
     storage = {}
     try:
@@ -36,6 +56,12 @@ async def main() -> int:
     for name in missing:
         print(f"  MISSING {name}")
 
+    print(f"Primary-image anomalies: {len(primary_anomalies)}")
+    for item_id, image_count, primary_count in primary_anomalies:
+        print(
+            f"  PRIMARY item_id={item_id} images={image_count} primary_count={primary_count}"
+        )
+
     cutoff = datetime.now(timezone.utc) - timedelta(hours=max(args.grace_hours, 0))
     deletable = []
     for name in orphans:
@@ -48,10 +74,14 @@ async def main() -> int:
 
     if args.delete_orphans:
         for name in deletable:
-            minio_client.remove_object(MINIO_BUCKET, name)
+            try:
+                minio_client.remove_object(MINIO_BUCKET, name)
+            except S3Error as exc:
+                print(f"  DELETE_FAILED {name}: {exc}")
+                return 2
             print(f"  DELETED {name}")
 
-    return 1 if missing else 0
+    return 1 if missing or primary_anomalies else 0
 
 
 if __name__ == "__main__":

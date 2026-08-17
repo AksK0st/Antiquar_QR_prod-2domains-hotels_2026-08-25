@@ -43,12 +43,16 @@ BACKUP_DIR="$BACKUP_DIR" compose --profile maintenance run --rm --no-deps \
   --entrypoint /bin/sh minio-tools -ec \
   'mc alias set local http://minio:9000 "$MINIO_APP_USER" "$MINIO_APP_PASSWORD" >/dev/null && mc mirror --overwrite "local/$MINIO_BUCKET" "/backup/'"$STAMP"'/objects"'
 
-echo "[3/3] Checksums and manifest"
+echo "[3/3] Manifest and checksums"
+printf 'created_at_utc=%s\npostgres_db=%s\nminio_bucket=%s\n' "$STAMP" "$POSTGRES_DB" "$MINIO_BUCKET" > "$DEST/manifest.txt"
 (
   cd "$DEST"
   find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 )
-printf 'created_at_utc=%s\npostgres_db=%s\nminio_bucket=%s\n' "$STAMP" "$POSTGRES_DB" "$MINIO_BUCKET" > "$DEST/manifest.txt"
 
 trap - EXIT INT TERM
 echo "Backup complete: $DEST"
+
+if [ "${BACKUP_APPLY_RETENTION:-1}" = "1" ]; then
+  python3 "$PROJECT_ROOT/ops/backup/retention.py" "$BACKUP_DIR"
+fi

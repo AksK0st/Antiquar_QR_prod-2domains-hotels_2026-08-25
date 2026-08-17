@@ -1,0 +1,10 @@
+[Unit]
+Description=Antiquar QR daily maintenance
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/antiquar
+Environment=ENV_FILE=/opt/antiquar/.env.production
+ExecStart=/opt/antiquar/ops/maintenance/daily.sh

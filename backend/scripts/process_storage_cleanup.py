@@ -15,7 +15,8 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("storage_cleanup")
 
 
-async def main() -> None:
+async def main() -> int:
+    failures = 0
     async with SessionLocal() as db:
         jobs = (
             await db.execute(select(StorageCleanupJob).order_by(StorageCleanupJob.id).limit(500))
@@ -26,6 +27,7 @@ async def main() -> None:
                     lambda name=job.object_name: minio_client.remove_object(MINIO_BUCKET, name)
                 )
             except (S3Error, OSError) as exc:
+                failures += 1
                 job.attempts += 1
                 job.last_error = str(exc)[:4000]
                 logger.warning("retry failed object=%s attempts=%s", job.object_name, job.attempts)
@@ -33,7 +35,8 @@ async def main() -> None:
                 await db.delete(job)
                 logger.info("deleted object=%s", job.object_name)
         await db.commit()
+    return 1 if failures else 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    raise SystemExit(asyncio.run(main()))

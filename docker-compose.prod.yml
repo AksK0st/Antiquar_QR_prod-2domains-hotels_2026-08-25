@@ -101,7 +101,7 @@ services:
       until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 && mc ready local >/dev/null 2>&1; do sleep 2; done;
       mc mb --ignore-existing "local/$${MINIO_BUCKET}";
       sed "s/__BUCKET__/$${MINIO_BUCKET}/g" /config/app-policy.template.json > /tmp/app-policy.json;
-      mc admin user add local "$${MINIO_APP_USER}" "$${MINIO_APP_PASSWORD}" || true;
+      mc admin user add local "$${MINIO_APP_USER}" "$${MINIO_APP_PASSWORD}";
       mc admin policy create local antiquar-app /tmp/app-policy.json;
       mc admin policy attach local antiquar-app --user "$${MINIO_APP_USER}" || true
     restart: "no"
@@ -218,6 +218,78 @@ services:
     tmpfs: [/tmp]
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
+
+  cleanup-sessions:
+    profiles: ["maintenance"]
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    command: ["python", "scripts/cleanup_sessions.py"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  storage-cleanup:
+    profiles: ["maintenance"]
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    command: ["python", "scripts/process_storage_cleanup.py"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  reconcile-storage:
+    profiles: ["maintenance"]
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    command: ["python", "scripts/reconcile_storage.py"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
+
+  resanitize-images:
+    profiles: ["maintenance"]
+    image: antiquar-backend:${RELEASE_TAG:?RELEASE_TAG must be set}
+    build:
+      context: ./backend
+    environment: *backend-env
+    command: ["python", "scripts/resanitize_images.py"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    networks: [internal]
+    restart: "no"
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: ["no-new-privileges:true"]
+    cap_drop: [ALL]
+    logging: *default-logging
 
   minio-tools:
     profiles: ["maintenance"]

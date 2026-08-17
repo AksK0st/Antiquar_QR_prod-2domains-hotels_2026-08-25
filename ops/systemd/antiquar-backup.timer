@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Antiquar QR production backup
+
+[Timer]
+OnCalendar=*-*-* 03:15:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=antiquar-backup.service
+
+[Install]
+WantedBy=timers.target
