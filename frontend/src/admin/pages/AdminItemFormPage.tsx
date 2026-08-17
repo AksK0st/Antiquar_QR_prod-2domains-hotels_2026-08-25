@@ -87,7 +87,15 @@ function numberOrNull(
     return null
   }
 
-  return Number(value)
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+
+function positiveId(value: string | undefined): number | null {
+  if (!value || !/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
 }
 
 
@@ -95,12 +103,9 @@ function AdminItemFormPage() {
   const navigate = useNavigate()
   const { itemId } = useParams()
 
-  const parsedItemId = itemId
-    ? Number(itemId)
-    : null
-
-  const isEditing =
-    parsedItemId !== null
+  const isEditing = itemId !== undefined
+  const parsedItemId = positiveId(itemId)
+  const hasInvalidItemId = isEditing && parsedItemId === null
 
   const [form, setForm] =
     useState<FormState>(EMPTY_FORM)
@@ -116,6 +121,7 @@ function AdminItemFormPage() {
 
   const [error, setError] =
     useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [itemVersion, setItemVersion] = useState<number | null>(null)
   const [publicId, setPublicId] = useState<string | null>(null)
 
@@ -129,7 +135,17 @@ function AdminItemFormPage() {
     const controller = new AbortController()
     let cancelled = false
 
+    if (hasInvalidItemId) {
+      setError('Некорректный идентификатор предмета.')
+      setLoadFailed(true)
+      setIsLoading(false)
+      return () => controller.abort()
+    }
+
     async function loadData() {
+      setIsLoading(true)
+      setLoadFailed(false)
+      setError(null)
       try {
         const collectionsResult =
           await getAdminCollections({ signal: controller.signal })
@@ -147,17 +163,16 @@ function AdminItemFormPage() {
           const item =
             await getAdminItem(parsedItemId, controller.signal)
 
-          setSavedQrIdentity({
-              name: item.name,
-              slug: item.slug,
-            })
-          setItemVersion(item.version)
-          setPublicId(item.public_id)
-
           if (cancelled) {
             return
           }
 
+          setSavedQrIdentity({
+            name: item.name,
+            slug: item.slug,
+          })
+          setItemVersion(item.version)
+          setPublicId(item.public_id)
           setForm({
             slug: item.slug,
             name: item.name,
@@ -208,6 +223,7 @@ function AdminItemFormPage() {
           return
         }
 
+        setLoadFailed(true)
         setError(
           'Не удалось загрузить данные.',
         )
@@ -225,6 +241,7 @@ function AdminItemFormPage() {
       controller.abort()
     }
   }, [
+    hasInvalidItemId,
     isEditing,
     navigate,
     parsedItemId,
@@ -366,6 +383,19 @@ function AdminItemFormPage() {
     )
   }
 
+  if (loadFailed || (isEditing && (parsedItemId === null || itemVersion === null))) {
+    return (
+      <div className="max-w-4xl">
+        <p role="alert" className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+          {error ?? 'Не удалось открыть предмет.'}
+        </p>
+        <Link to="/admin/items" className="mt-5 inline-block text-sm text-stone-300 underline">
+          Вернуться к предметам
+        </Link>
+      </div>
+    )
+  }
+
   const hasUnsavedQrChanges =
   savedQrIdentity !== null &&
   (
@@ -400,7 +430,7 @@ function AdminItemFormPage() {
       </div>
 
       {error && (
-        <p className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        <p role="alert" aria-live="polite" className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
           {error}
         </p>
       )}

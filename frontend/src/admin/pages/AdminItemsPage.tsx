@@ -32,7 +32,8 @@ function AdminItemsPage() {
 
   const [updatingId, setUpdatingId] =
     useState<number | null>(null)
-  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const [page, setPage] = useState(0)
 
@@ -41,9 +42,11 @@ function AdminItemsPage() {
     let cancelled = false
 
     async function loadItems() {
+      setIsLoading(true)
+      setError(null)
       try {
         const loadedItems =
-          await getAdminItems({ q: search.trim() || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
+          await getAdminItems({ q: submittedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
 
         if (!cancelled) {
           setItems(loadedItems)
@@ -83,7 +86,7 @@ function AdminItemsPage() {
       cancelled = true
       controller.abort()
     }
-  }, [navigate, reloadKey, page])
+  }, [navigate, reloadKey, page, submittedSearch])
 
 
   async function handleToggleActive(
@@ -167,13 +170,18 @@ function AdminItemsPage() {
 
       <form
         className="mt-6 flex flex-col gap-3 sm:flex-row"
-        onSubmit={(event) => { event.preventDefault(); setPage(0); setReloadKey((value) => value + 1) }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          setSubmittedSearch(searchInput.trim())
+          setPage(0)
+          setReloadKey((value) => value + 1)
+        }}
       >
         <label className="sr-only" htmlFor="item-search">Поиск предметов</label>
         <input
           id="item-search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Поиск по названию или slug"
           maxLength={100}
           className="min-w-0 flex-1 rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
@@ -182,7 +190,7 @@ function AdminItemsPage() {
       </form>
 
       {error && (
-        <p className="mt-6 text-sm text-red-400">
+        <p role="alert" aria-live="polite" className="mt-6 text-sm text-red-400">
           {error}
         </p>
       )}
@@ -192,7 +200,7 @@ function AdminItemsPage() {
           {items.map((item) => (
             <div
               key={item.id}
-              className="flex items-center justify-between gap-6 bg-stone-900/40 px-5 py-4"
+              className="flex flex-col items-stretch justify-between gap-4 bg-stone-900/40 px-5 py-4 sm:flex-row sm:items-center sm:gap-6"
             >
               <div className="min-w-0">
                 <div className="flex items-center gap-3">
@@ -219,7 +227,7 @@ function AdminItemsPage() {
                 </p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                 <Link
                   to={`/i/${item.public_id}`}
                   target="_blank"

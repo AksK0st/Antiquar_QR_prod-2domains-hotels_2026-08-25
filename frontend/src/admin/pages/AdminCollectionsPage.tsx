@@ -34,7 +34,8 @@ function AdminCollectionsPage() {
 
   const [deletingId, setDeletingId] =
       useState<number | null>(null)
-  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
+  const [submittedSearch, setSubmittedSearch] = useState('')
   const [reloadKey, setReloadKey] = useState(0)
   const [page, setPage] = useState(0)
 
@@ -44,9 +45,11 @@ function AdminCollectionsPage() {
     let cancelled = false
 
     async function loadCollections() {
+      setIsLoading(true)
+      setError(null)
       try {
         const loaded =
-          await getAdminCollections({ q: search.trim() || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
+          await getAdminCollections({ q: submittedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
 
         if (!cancelled) {
           setCollections(loaded)
@@ -86,7 +89,7 @@ function AdminCollectionsPage() {
       cancelled = true
       controller.abort()
     }
-  }, [navigate, reloadKey, page])
+  }, [navigate, reloadKey, page, submittedSearch])
 
 
   async function handleDelete(
@@ -186,13 +189,18 @@ function AdminCollectionsPage() {
 
       <form
         className="mt-6 flex flex-col gap-3 sm:flex-row"
-        onSubmit={(event) => { event.preventDefault(); setPage(0); setReloadKey((value) => value + 1) }}
+        onSubmit={(event) => {
+          event.preventDefault()
+          setSubmittedSearch(searchInput.trim())
+          setPage(0)
+          setReloadKey((value) => value + 1)
+        }}
       >
         <label className="sr-only" htmlFor="collection-search">Поиск коллекций</label>
         <input
           id="collection-search"
-          value={search}
-          onChange={(event) => setSearch(event.target.value)}
+          value={searchInput}
+          onChange={(event) => setSearchInput(event.target.value)}
           placeholder="Поиск по названию или slug"
           maxLength={100}
           className="min-w-0 flex-1 rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
@@ -201,7 +209,7 @@ function AdminCollectionsPage() {
       </form>
 
       {error && (
-        <p className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        <p role="alert" aria-live="polite" className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
           {error}
         </p>
       )}
@@ -223,10 +231,10 @@ function AdminCollectionsPage() {
             (collection) => (
               <div
                 key={collection.id}
-                className="flex items-center justify-between gap-6 border-b border-stone-800 bg-stone-900/40 px-5 py-4 last:border-b-0"
+                className="flex flex-col items-stretch justify-between gap-4 border-b border-stone-800 bg-stone-900/40 px-5 py-4 last:border-b-0 sm:flex-row sm:items-center sm:gap-6"
               >
                 <div className="min-w-0">
-                  <div className="flex items-center gap-3">
+                  <div className="flex flex-wrap items-center gap-3">
                     <p className="font-medium">
                       {collection.name}
                     </p>
@@ -249,7 +257,7 @@ function AdminCollectionsPage() {
                   )}
                 </div>
 
-                <div className="flex shrink-0 items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                   <Link
                     to={`/admin/collections/${collection.id}`}
                     className="rounded-lg border border-stone-700 px-3 py-2 text-sm text-stone-300 transition hover:border-stone-500"

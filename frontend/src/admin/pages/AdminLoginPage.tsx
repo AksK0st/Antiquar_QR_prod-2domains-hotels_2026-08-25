@@ -128,7 +128,7 @@ function AdminLoginPage() {
             </div>
 
             {error && (
-              <p className="text-sm text-red-400">
+              <p role="alert" aria-live="polite" className="text-sm text-red-400">
                 {error}
               </p>
             )}

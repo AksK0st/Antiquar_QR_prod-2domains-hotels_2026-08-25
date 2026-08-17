@@ -45,6 +45,13 @@ function emptyToNull(
 }
 
 
+function positiveId(value: string | undefined): number | null {
+  if (!value || !/^\d+$/.test(value)) return null
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : null
+}
+
+
 function AdminCollectionFormPage() {
   const navigate = useNavigate()
 
@@ -52,13 +59,9 @@ function AdminCollectionFormPage() {
     collectionId,
   } = useParams()
 
-  const parsedCollectionId =
-    collectionId
-      ? Number(collectionId)
-      : null
-
-  const isEditing =
-    parsedCollectionId !== null
+  const isEditing = collectionId !== undefined
+  const parsedCollectionId = positiveId(collectionId)
+  const hasInvalidCollectionId = isEditing && parsedCollectionId === null
 
   const [form, setForm] =
     useState<FormState>(EMPTY_FORM)
@@ -71,14 +74,16 @@ function AdminCollectionFormPage() {
 
   const [error, setError] =
     useState<string | null>(null)
+  const [loadFailed, setLoadFailed] = useState(false)
   const [collectionVersion, setCollectionVersion] = useState<number | null>(null)
 
 
   useEffect(() => {
-    if (
-      !isEditing ||
-      parsedCollectionId === null
-    ) {
+    if (!isEditing) return
+    if (hasInvalidCollectionId || parsedCollectionId === null) {
+      setError('Некорректный идентификатор коллекции.')
+      setLoadFailed(true)
+      setIsLoading(false)
       return
     }
 
@@ -86,6 +91,9 @@ function AdminCollectionFormPage() {
     let cancelled = false
 
     async function loadCollection() {
+      setIsLoading(true)
+      setLoadFailed(false)
+      setError(null)
       try {
         const collection =
           await getAdminCollection(
@@ -129,6 +137,7 @@ function AdminCollectionFormPage() {
           error instanceof Error &&
           error.message === 'NOT_FOUND'
         ) {
+          setLoadFailed(true)
           setError(
             'Коллекция не найдена.',
           )
@@ -136,6 +145,7 @@ function AdminCollectionFormPage() {
           return
         }
 
+        setLoadFailed(true)
         setError(
           'Не удалось загрузить коллекцию.',
         )
@@ -153,6 +163,7 @@ function AdminCollectionFormPage() {
       controller.abort()
     }
   }, [
+    hasInvalidCollectionId,
     isEditing,
     navigate,
     parsedCollectionId,
@@ -248,6 +259,19 @@ function AdminCollectionFormPage() {
       <p className="text-stone-400">
         Загрузка...
       </p>
+    )
+  }
+
+  if (loadFailed || (isEditing && (parsedCollectionId === null || collectionVersion === null))) {
+    return (
+      <div className="max-w-3xl">
+        <p role="alert" className="rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+          {error ?? 'Не удалось открыть коллекцию.'}
+        </p>
+        <Link to="/admin/collections" className="mt-5 inline-block text-sm text-stone-300 underline">
+          Вернуться к коллекциям
+        </Link>
+      </div>
     )
   }
 
