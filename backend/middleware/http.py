@@ -77,7 +77,12 @@ class ApplicationHttpMiddleware(BaseHTTPMiddleware):
             raise
         finally:
             duration_ms = round((time.perf_counter() - started) * 1000, 2)
-            logger.info(
+            log_request = (
+                logger.debug
+                if request.url.path.startswith("/health") and status_code < 500
+                else logger.info
+            )
+            log_request(
                 "request",
                 extra={
                     "request_id": request_id,

@@ -227,8 +227,8 @@ services:
     environment: *backend-env
     command: ["python", "scripts/cleanup_sessions.py"]
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
     networks: [internal]
     restart: "no"
     read_only: true
@@ -245,7 +245,9 @@ services:
     environment: *backend-env
     command: ["python", "scripts/process_storage_cleanup.py"]
     depends_on:
-      migrate:
+      db:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
     networks: [internal]
     restart: "no"
@@ -263,7 +265,9 @@ services:
     environment: *backend-env
     command: ["python", "scripts/reconcile_storage.py"]
     depends_on:
-      migrate:
+      db:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
     networks: [internal]
     restart: "no"
@@ -281,7 +285,9 @@ services:
     environment: *backend-env
     command: ["python", "scripts/resanitize_images.py"]
     depends_on:
-      migrate:
+      db:
+        condition: service_healthy
+      minio-init:
         condition: service_completed_successfully
     networks: [internal]
     restart: "no"

@@ -47,7 +47,7 @@ jobs:
       - name: Validate compose files
         run: |
           docker compose -f docker-compose.ci.yml config -q
-          docker compose --env-file .env.production.example -f docker-compose.prod.yml config -q
+          RELEASE_TAG=ci-config docker compose --env-file .env.production.example -f docker-compose.prod.yml config -q
       - name: Build and start prod-like stack
         run: docker compose -f docker-compose.ci.yml up -d --build
       - name: Wait for readiness

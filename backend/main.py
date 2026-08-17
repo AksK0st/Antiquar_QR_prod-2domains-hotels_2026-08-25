@@ -72,8 +72,12 @@ async def health_ready():
     try:
         async with SessionLocal() as db:
             await asyncio.wait_for(db.execute(text("SELECT 1")), timeout=3)
-    except Exception:
-        logger.exception("Database readiness check failed")
+    except Exception as exc:
+        logger.warning(
+            "Database readiness check failed: %s",
+            type(exc).__name__,
+            extra={"event": "readiness_database_failed"},
+        )
         errors.append("database")
 
     try:
@@ -83,11 +87,18 @@ async def health_ready():
         )
         if not bucket_exists:
             errors.append("object_storage_bucket")
-    except (S3Error, OSError, TimeoutError, asyncio.TimeoutError):
-        logger.exception("Object storage readiness check failed")
+    except (S3Error, OSError, TimeoutError, asyncio.TimeoutError) as exc:
+        logger.warning(
+            "Object storage readiness check failed: %s",
+            type(exc).__name__,
+            extra={"event": "readiness_storage_failed"},
+        )
         errors.append("object_storage")
     except Exception:
-        logger.exception("Unexpected object storage readiness failure")
+        logger.exception(
+            "Unexpected object storage readiness failure",
+            extra={"event": "readiness_storage_unexpected"},
+        )
         errors.append("object_storage")
 
     if errors:
