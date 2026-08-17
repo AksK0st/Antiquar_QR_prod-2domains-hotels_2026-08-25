@@ -161,7 +161,9 @@ async def update_item(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    item = await db.get(Item, item_id)
+    item = (
+        await db.execute(select(Item).where(Item.id == item_id).with_for_update())
+    ).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 

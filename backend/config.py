@@ -20,6 +20,17 @@ _INSECURE_SECRET_VALUES = {
     "minioadmin",
 }
 
+_INSECURE_SECRET_PREFIXES = (
+    "replace_with_",
+    "replace-me",
+    "replace_me",
+    "example_",
+    "example-",
+)
+
+_RESERVED_PRODUCTION_HOSTS = {"example.com", "example.net", "example.org"}
+_RESERVED_PRODUCTION_SUFFIXES = (".example", ".invalid", ".test", ".localhost")
+
 
 class Settings(BaseSettings):
     # Application
@@ -75,8 +86,13 @@ class Settings(BaseSettings):
             if parsed.scheme != "https":
                 raise ValueError("PUBLIC_BASE_URL must use https in production")
 
-            if parsed.hostname in {"localhost", "127.0.0.1", "::1"}:
+            hostname = (parsed.hostname or "").lower().rstrip(".")
+            if hostname in {"localhost", "127.0.0.1", "::1"}:
                 raise ValueError("PUBLIC_BASE_URL must not point to localhost in production")
+            if hostname in _RESERVED_PRODUCTION_HOSTS or hostname.endswith(_RESERVED_PRODUCTION_SUFFIXES):
+                raise ValueError("PUBLIC_BASE_URL must use a real production hostname")
+            if parsed.username or parsed.password or parsed.query or parsed.fragment:
+                raise ValueError("PUBLIC_BASE_URL must be a clean application URL without credentials/query/fragment")
 
             required_secrets = {
                 "POSTGRES_PASSWORD": self.postgres_password.get_secret_value(),
@@ -85,7 +101,8 @@ class Settings(BaseSettings):
             }
 
             for name, value in required_secrets.items():
-                if value.strip().lower() in _INSECURE_SECRET_VALUES:
+                normalized = value.strip().lower()
+                if normalized in _INSECURE_SECRET_VALUES or normalized.startswith(_INSECURE_SECRET_PREFIXES):
                     raise ValueError(f"{name} must be changed for production")
 
             if len(self.postgres_password.get_secret_value()) < 16:
