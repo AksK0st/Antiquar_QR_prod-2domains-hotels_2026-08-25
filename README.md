@@ -145,6 +145,8 @@ The script:
 6. starts backend/frontend/gateway;
 7. checks public readiness when `curl` is available.
 
+Runtime containers never invoke the migration or MinIO bootstrap jobs implicitly; those one-shot steps are owned by the release/restore workflow.
+
 After deployment verify with a physical phone over mobile Internet:
 
 - `https://<domain>/`;

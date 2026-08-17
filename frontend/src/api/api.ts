@@ -20,18 +20,13 @@ export function getItemByPublicId(publicId: string, signal?: AbortSignal): Promi
   )
 }
 
-export function getItemImageUrl(slug: string): string {
-  return `${API_URL}/images/${encodeURIComponent(slug)}`
-}
-
 export function getCollections(signal?: AbortSignal): Promise<Collection[]> {
   return apiFetch<Collection[]>(`${API_URL}/collections/`, {}, signal)
 }
 
 export function getItemImageByIdUrl(
-  slug: string,
   imageId: number,
   contentVersion: number,
 ): string {
-  return `${API_URL}/images/${encodeURIComponent(slug)}/${imageId}?v=${contentVersion}`
+  return `${API_URL}/images/by-id/${imageId}/v/${contentVersion}`
 }

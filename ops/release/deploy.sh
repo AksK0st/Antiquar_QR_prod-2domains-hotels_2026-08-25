@@ -34,7 +34,7 @@ until compose exec -T db pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB" >/dev/
 done
 
 echo "[3/7] Bootstrap bucket/application storage credentials"
-compose up --no-build --abort-on-container-exit --exit-code-from minio-init minio-init
+compose run --rm --no-deps minio-init
 
 echo "[4/7] Stop application traffic for a cross-storage pre-migration backup"
 compose stop gateway backend >/dev/null 2>&1 || true
@@ -53,7 +53,7 @@ ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" "$PROJECT_ROOT/ops/backup/back
 
 echo "[5/7] Apply database migrations"
 MIGRATION_STARTED=1
-compose up --no-build --abort-on-container-exit --exit-code-from migrate migrate
+compose run --rm --no-deps migrate
 
 echo "[6/7] Start application and gateway"
 compose up -d --no-build backend frontend gateway

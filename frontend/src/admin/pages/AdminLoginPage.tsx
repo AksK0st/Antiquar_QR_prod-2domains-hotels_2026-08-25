@@ -78,6 +78,7 @@ function AdminLoginPage() {
           </div>
 
           <form
+            aria-describedby={error ? 'admin-login-error' : undefined}
             onSubmit={handleSubmit}
             className="space-y-5"
           >
@@ -128,7 +129,7 @@ function AdminLoginPage() {
             </div>
 
             {error && (
-              <p role="alert" aria-live="polite" className="text-sm text-red-400">
+              <p id="admin-login-error" role="alert" aria-live="polite" className="text-sm text-red-400">
                 {error}
               </p>
             )}

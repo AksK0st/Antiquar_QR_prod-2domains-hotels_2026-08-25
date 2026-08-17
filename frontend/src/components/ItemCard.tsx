@@ -1,6 +1,6 @@
 import { Link } from 'react-router'
 
-import { getItemImageUrl } from '../api/api'
+import { getItemImageByIdUrl } from '../api/api'
 import type { ItemSummary } from '../types/item'
 
 
@@ -20,11 +20,17 @@ function ItemCard({ item }: ItemCardProps) {
 
         <div className="aspect-[4/3] overflow-hidden">
 
-          <img
-            src={getItemImageUrl(item.slug)}
-            alt={item.name}
-            loading="lazy"
-            className="
+          {item.primary_image ? (
+            <img
+              src={getItemImageByIdUrl(
+                item.primary_image.id,
+                item.primary_image.content_version,
+              )}
+              alt={item.name}
+              width={item.primary_image.width ?? undefined}
+              height={item.primary_image.height ?? undefined}
+              loading="lazy"
+              className="
               h-full
               w-full
               object-cover
@@ -33,7 +39,12 @@ function ItemCard({ item }: ItemCardProps) {
               ease-out
               group-hover:scale-[1.025]
             "
-          />
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center px-6 text-center text-sm text-[#756e65]">
+              Фотография пока не добавлена
+            </div>
+          )}
 
         </div>
 

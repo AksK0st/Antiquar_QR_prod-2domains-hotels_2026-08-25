@@ -67,3 +67,12 @@ class Item(Base):
     images: Mapped[list["ItemImage"]] = relationship(
         back_populates="item", cascade="all, delete-orphan"
     )
+
+    @property
+    def primary_image(self) -> "ItemImage | None":
+        if not self.images:
+            return None
+        return min(
+            self.images,
+            key=lambda image: (not image.is_primary, image.sort_order, image.id),
+        )

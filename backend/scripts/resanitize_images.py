@@ -69,30 +69,36 @@ async def run(apply: bool) -> int:
                 or image.content_type != processed.content_type
             )
             bytes_changed = raw != processed.data
-            if not bytes_changed and not metadata_changed:
+            if not bytes_changed and not metadata_changed and not apply:
                 print(f"[OK] id={image.id} {image.object_name}")
                 continue
 
-            changed += 1
-            print(
-                f"[{'APPLY' if apply else 'DRY-RUN'}] id={image.id} {image.object_name}: "
-                f"bytes={len(raw)}->{processed.size}, "
-                f"dimensions={image.width}x{image.height}->{processed.width}x{processed.height}"
-            )
-            if apply:
-                await run_in_threadpool(
-                    lambda p=processed, n=image.object_name: minio_client.put_object(
-                        bucket_name=MINIO_BUCKET,
-                        object_name=n,
-                        data=BytesIO(p.data),
-                        length=p.size,
-                        content_type=p.content_type,
-                    )
+            if bytes_changed or metadata_changed:
+                changed += 1
+                print(
+                    f"[{'APPLY' if apply else 'DRY-RUN'}] id={image.id} {image.object_name}: "
+                    f"bytes={len(raw)}->{processed.size}, "
+                    f"dimensions={image.width}x{image.height}->{processed.width}x{processed.height}"
                 )
+
+            if apply:
+                if bytes_changed:
+                    await run_in_threadpool(
+                        lambda p=processed, n=image.object_name: minio_client.put_object(
+                            bucket_name=MINIO_BUCKET,
+                            object_name=n,
+                            data=BytesIO(p.data),
+                            length=p.size,
+                            content_type=p.content_type,
+                        )
+                    )
                 image.size = processed.size
                 image.width = processed.width
                 image.height = processed.height
                 image.content_type = processed.content_type
+                # Always advance the public cache key in apply mode. If an earlier
+                # run managed to overwrite MinIO but failed before the DB commit,
+                # rerunning --apply still invalidates any long-lived browser cache.
                 image.content_version += 1
 
         if apply:

@@ -116,6 +116,7 @@ class ItemSummary(BaseModel):
     period_text: str | None
     collection_id: int | None
     sort_order: int
+    primary_image: PublicItemImageRead | None = None
 
 
 class ItemRead(ItemBase):

@@ -66,6 +66,27 @@ function ItemPage() {
     return () => controller.abort()
   }, [slug, publicId])
 
+  useEffect(() => {
+    if (!item) return
+
+    const previousTitle = document.title
+    const descriptionTag = document.querySelector<HTMLMetaElement>('meta[name="description"]')
+    const previousDescription = descriptionTag?.content ?? null
+
+    document.title = `${item.name} — Отель «Галерея»`
+    if (descriptionTag) {
+      descriptionTag.content = item.short_description
+        ?? `История и описание экспоната «${item.name}».`
+    }
+
+    return () => {
+      document.title = previousTitle
+      if (descriptionTag && previousDescription !== null) {
+        descriptionTag.content = previousDescription
+      }
+    }
+  }, [item])
+
 
   if (loading) {
     return (
@@ -131,7 +152,6 @@ function ItemPage() {
 
           {/* GALLERY */}
             <ItemGallery
-              slug={item.slug}
               name={item.name}
               images={item.images}
             />

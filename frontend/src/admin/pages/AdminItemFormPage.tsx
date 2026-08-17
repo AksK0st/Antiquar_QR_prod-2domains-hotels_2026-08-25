@@ -430,7 +430,7 @@ function AdminItemFormPage() {
       </div>
 
       {error && (
-        <p role="alert" aria-live="polite" className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
+        <p id="admin-item-form-error" role="alert" aria-live="polite" className="mt-6 rounded-lg border border-red-900 bg-red-950/40 px-4 py-3 text-sm text-red-400">
           {error}
         </p>
       )}
@@ -455,6 +455,8 @@ function AdminItemFormPage() {
           )}
 
       <form
+        id="admin-item-form"
+        aria-describedby={error ? 'admin-item-form-error' : undefined}
         onSubmit={handleSubmit}
         className="mt-8 space-y-8"
       >

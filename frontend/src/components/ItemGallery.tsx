@@ -15,14 +15,12 @@ import type {
 
 
 interface ItemGalleryProps {
-  slug: string
   name: string
   images: ItemImage[]
 }
 
 
 function ItemGallery({
-  slug,
   name,
   images,
 }: ItemGalleryProps) {
@@ -52,10 +50,7 @@ function ItemGallery({
 
   useEffect(() => {
     setActiveIndex(primaryIndex)
-  }, [
-    primaryIndex,
-    slug,
-  ])
+  }, [primaryIndex])
 
 
   if (sortedImages.length === 0) {
@@ -153,7 +148,6 @@ function ItemGallery({
         <img
           key={activeImage.id}
           src={getItemImageByIdUrl(
-            slug,
             activeImage.id,
             activeImage.content_version,
           )}
@@ -287,7 +281,6 @@ function ItemGallery({
                 >
                   <img
                     src={getItemImageByIdUrl(
-                      slug,
                       image.id,
                       image.content_version,
                     )}

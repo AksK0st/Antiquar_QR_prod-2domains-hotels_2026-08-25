@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import Response
@@ -220,6 +221,7 @@ async def update_item(
 async def delete_item(
     item_id: int,
     request: Request,
+    confirm_public_id: UUID = Query(..., description="Immutable public ID confirmation"),
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
@@ -230,6 +232,16 @@ async def delete_item(
     ).scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
+    if item.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Hide the item before permanent deletion",
+        )
+    if confirm_public_id != item.public_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Public ID confirmation does not match",
+        )
 
     image_result = await db.execute(
         select(ItemImage.object_name).where(ItemImage.item_id == item_id)

@@ -12,7 +12,9 @@ import {
   getAdminItems,
   setItemActive,
 } from '../api/items'
+import { getAdminCollections } from '../api/collections'
 
+import type { AdminCollection } from '../types/collection'
 import type { AdminItem } from '../types/item'
 
 const PAGE_SIZE = 50
@@ -34,6 +36,9 @@ function AdminItemsPage() {
     useState<number | null>(null)
   const [searchInput, setSearchInput] = useState('')
   const [submittedSearch, setSubmittedSearch] = useState('')
+  const [collectionFilter, setCollectionFilter] = useState('')
+  const [statusFilter, setStatusFilter] = useState('')
+  const [collections, setCollections] = useState<AdminCollection[]>([])
   const [reloadKey, setReloadKey] = useState(0)
   const [page, setPage] = useState(0)
 
@@ -46,7 +51,14 @@ function AdminItemsPage() {
       setError(null)
       try {
         const loadedItems =
-          await getAdminItems({ q: submittedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
+          await getAdminItems({
+            q: submittedSearch || undefined,
+            collectionId: collectionFilter ? Number(collectionFilter) : undefined,
+            isActive: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
+            limit: PAGE_SIZE,
+            offset: page * PAGE_SIZE,
+            signal: controller.signal,
+          })
 
         if (!cancelled) {
           setItems(loadedItems)
@@ -86,7 +98,23 @@ function AdminItemsPage() {
       cancelled = true
       controller.abort()
     }
-  }, [navigate, reloadKey, page, submittedSearch])
+  }, [collectionFilter, navigate, reloadKey, page, statusFilter, submittedSearch])
+
+  useEffect(() => {
+    const controller = new AbortController()
+
+    getAdminCollections({ limit: 200, signal: controller.signal })
+      .then(setCollections)
+      .catch((requestError) => {
+        if (controller.signal.aborted) return
+        if (requestError instanceof Error && requestError.message === 'UNAUTHORIZED') {
+          navigate('/admin/login', { replace: true })
+        }
+      })
+
+    return () => controller.abort()
+  }, [navigate])
+
 
 
   async function handleToggleActive(
@@ -186,6 +214,33 @@ function AdminItemsPage() {
           maxLength={100}
           className="min-w-0 flex-1 rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
         />
+        <select
+          aria-label="Фильтр по коллекции"
+          value={collectionFilter}
+          onChange={(event) => {
+            setCollectionFilter(event.target.value)
+            setPage(0)
+          }}
+          className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
+        >
+          <option value="">Все коллекции</option>
+          {collections.map((collection) => (
+            <option key={collection.id} value={collection.id}>{collection.name}</option>
+          ))}
+        </select>
+        <select
+          aria-label="Фильтр по публикации"
+          value={statusFilter}
+          onChange={(event) => {
+            setStatusFilter(event.target.value)
+            setPage(0)
+          }}
+          className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
+        >
+          <option value="">Все статусы</option>
+          <option value="active">Опубликованы</option>
+          <option value="inactive">Скрыты</option>
+        </select>
         <button type="submit" className="rounded-lg border border-stone-700 px-4 py-2 text-sm">Найти</button>
       </form>
 

@@ -85,12 +85,18 @@ def main() -> None:
     expect(200, status, "immutable public API lookup")
     assert as_json(body)["id"] == seeded["id"]
 
-    # At least one seeded image must be publicly retrievable.
+    # At least one seeded image must be publicly retrievable through a
+    # content-versioned immutable URL used by the frontend.
     image_ok = False
     for item in seeded_items[:10]:
-        status, headers, _ = request(public, "GET", f"/api/public/images/{item['slug']}")
+        primary = item.get("primary_image")
+        if not primary:
+            continue
+        path = f"/api/public/images/by-id/{primary['id']}/v/{primary['content_version']}"
+        status, headers, _ = request(public, "GET", path)
         if status == 200:
-            assert "max-age" in headers.get("Cache-Control", "")
+            assert "immutable" in headers.get("Cache-Control", "")
+            assert headers.get("ETag"), "immutable image must expose ETag"
             image_ok = True
             break
     assert image_ok, "no seeded public image could be retrieved"
@@ -193,6 +199,20 @@ def main() -> None:
     image2 = as_json(body)
     assert image2["is_primary"] is False
 
+    image2_path = f"/api/public/images/by-id/{image2['id']}/v/{image2['content_version']}"
+    status, headers, _ = request(public, "GET", image2_path)
+    expect(200, status, "stable public image route")
+    etag = headers.get("ETag")
+    assert etag, "stable public image route must return ETag"
+    status, _, _ = request(public, "GET", image2_path, headers={"If-None-Match": etag})
+    expect(304, status, "public image conditional GET")
+    status, _, _ = request(
+        public,
+        "GET",
+        f"/api/public/images/by-id/{image2['id']}/v/{image2['content_version'] + 1}",
+    )
+    expect(404, status, "nonexistent image content version")
+
     status, _, _ = request(auth, "PATCH", f"/api/admin/items/{item['id']}/images/{image2['id']}/primary")
     expect(200, status, "set primary image")
     status, _, body = request(auth, "GET", f"/api/admin/items/{item['id']}/images/")
@@ -224,7 +244,11 @@ def main() -> None:
     status, _, _ = request(public, "GET", f"/api/public/items/by-public-id/{immutable_id}")
     expect(410, status, "inactive public item")
 
-    status, _, _ = request(auth, "DELETE", f"/api/admin/items/{item['id']}")
+    status, _, _ = request(
+        auth,
+        "DELETE",
+        f"/api/admin/items/{item['id']}?confirm_public_id={immutable_id}",
+    )
     expect(204, status, "delete item")
     status, _, _ = request(auth, "DELETE", f"/api/admin/collections/{collection['id']}")
     expect(204, status, "delete empty collection")

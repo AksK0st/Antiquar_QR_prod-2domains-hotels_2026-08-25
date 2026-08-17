@@ -117,8 +117,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
     networks: [internal]
     restart: "no"
     read_only: true
@@ -133,8 +131,10 @@ services:
       context: ./backend
     environment: *backend-env
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     networks: [internal]
     restart: unless-stopped
     read_only: true
@@ -210,8 +210,10 @@ services:
     environment: *backend-env
     command: ["/bin/sh", "-ec", "python seed.py && python minio_seed.py"]
     depends_on:
-      migrate:
-        condition: service_completed_successfully
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     networks: [internal]
     restart: "no"
     read_only: true
@@ -247,8 +249,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     networks: [internal]
     restart: "no"
     read_only: true
@@ -267,8 +269,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     networks: [internal]
     restart: "no"
     read_only: true
@@ -287,8 +289,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     networks: [internal]
     restart: "no"
     read_only: true

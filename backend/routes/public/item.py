@@ -24,6 +24,7 @@ async def get_items(
     result = await db.execute(
         select(Item)
         .where(Item.is_active.is_(True))
+        .options(selectinload(Item.images))
         .order_by(Item.sort_order, Item.id)
         .limit(limit)
         .offset(offset)

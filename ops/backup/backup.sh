@@ -16,7 +16,9 @@ POSTGRES_USER=$(require_compose_env POSTGRES_USER)
 MINIO_BUCKET=$(require_compose_env MINIO_BUCKET)
 RELEASE_TAG=$(compose_env_value RELEASE_TAG 2>/dev/null || printf 'unknown')
 BACKUP_APPLY_RETENTION=$(compose_env_value BACKUP_APPLY_RETENTION 2>/dev/null || printf '1')
+BACKUP_QUIESCE_WRITES=$(compose_env_value BACKUP_QUIESCE_WRITES 2>/dev/null || printf '1')
 case "$BACKUP_APPLY_RETENTION" in 0|1) ;; *) echo "BACKUP_APPLY_RETENTION must be 0 or 1" >&2; exit 1;; esac
+case "$BACKUP_QUIESCE_WRITES" in 0|1) ;; *) echo "BACKUP_QUIESCE_WRITES must be 0 or 1" >&2; exit 1;; esac
 case "$BACKUP_DIR" in /*) ;; *) echo "BACKUP_DIR must be absolute" >&2; exit 1;; esac
 [ -d "$BACKUP_DIR" ] || { echo "BACKUP_DIR must already exist and be mounted: $BACKUP_DIR" >&2; exit 1; }
 [ -w "$BACKUP_DIR" ] || { echo "BACKUP_DIR is not writable: $BACKUP_DIR" >&2; exit 1; }
@@ -35,9 +37,37 @@ compose() {
   docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" "$@"
 }
 
+BACKEND_WAS_RUNNING=0
+GATEWAY_WAS_RUNNING=0
+if [ "$BACKUP_QUIESCE_WRITES" = "1" ]; then
+  RUNNING_SERVICES=$(compose ps --status running --services 2>/dev/null || true)
+  printf '%s\n' "$RUNNING_SERVICES" | grep -qx backend && BACKEND_WAS_RUNNING=1 || true
+  printf '%s\n' "$RUNNING_SERVICES" | grep -qx gateway && GATEWAY_WAS_RUNNING=1 || true
+
+  if [ "$BACKEND_WAS_RUNNING" = "1" ] || [ "$GATEWAY_WAS_RUNNING" = "1" ]; then
+    echo "Quiescing application writes for a consistent DB/object snapshot..."
+    compose stop gateway backend >/dev/null
+  fi
+fi
+
+restore_services() {
+  if [ "$BACKEND_WAS_RUNNING" = "1" ]; then
+    compose start backend >/dev/null
+  fi
+  if [ "$GATEWAY_WAS_RUNNING" = "1" ]; then
+    compose start gateway >/dev/null
+  fi
+}
+
+restore_services_best_effort() {
+  restore_services >/dev/null 2>&1 || echo "WARNING: failed to restart application after backup attempt" >&2
+}
+
+BACKUP_COMPLETE=0
 cleanup_failed() {
   code=$?
-  if [ "$code" -ne 0 ]; then
+  restore_services_best_effort
+  if [ "$code" -ne 0 ] && [ "$BACKUP_COMPLETE" = "0" ]; then
     echo "Backup failed; removing incomplete backup: $DEST" >&2
     rm -rf "$DEST"
   fi
@@ -67,7 +97,9 @@ printf 'backup_format=1\ncreated_at_utc=%s\nconfigured_release_tag=%s\ndatabase_
   cd "$DEST"
   find . -type f ! -name SHA256SUMS -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
 )
+BACKUP_COMPLETE=1
 
+restore_services
 trap - EXIT INT TERM
 echo "Backup complete: $DEST"
 

@@ -72,6 +72,29 @@ async def _stream_image(image: ItemImage, request: Request, *, immutable: bool):
     )
 
 
+@router.get("/by-id/{image_id}/v/{content_version}")
+async def get_image_by_stable_id(
+    image_id: int,
+    content_version: int,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    image = (
+        await db.execute(
+            select(ItemImage)
+            .join(Item)
+            .where(
+                Item.is_active.is_(True),
+                ItemImage.id == image_id,
+                ItemImage.content_version == content_version,
+            )
+        )
+    ).scalar_one_or_none()
+    if image is None:
+        raise HTTPException(status_code=404, detail="Image not found")
+    return await _stream_image(image, request, immutable=True)
+
+
 @router.get("/{item_slug}")
 async def get_image_by_slug(
     item_slug: str,

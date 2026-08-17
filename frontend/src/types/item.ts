@@ -16,6 +16,7 @@ export interface ItemSummary {
   period_text: string | null
   collection_id: number | null
   sort_order: number
+  primary_image: ItemImage | null
 }
 
 export interface Item extends ItemSummary {

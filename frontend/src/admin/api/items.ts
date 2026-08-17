@@ -34,10 +34,19 @@ function mapError(error: unknown): never {
 }
 
 export async function getAdminItems(
-  options: { q?: string; limit?: number; offset?: number; signal?: AbortSignal } = {},
+  options: {
+    q?: string
+    collectionId?: number
+    isActive?: boolean
+    limit?: number
+    offset?: number
+    signal?: AbortSignal
+  } = {},
 ): Promise<AdminItem[]> {
   const params = new URLSearchParams()
   if (options.q) params.set('q', options.q)
+  if (options.collectionId !== undefined) params.set('collection_id', String(options.collectionId))
+  if (options.isActive !== undefined) params.set('is_active', String(options.isActive))
   params.set('limit', String(options.limit ?? 100))
   params.set('offset', String(options.offset ?? 0))
   try {

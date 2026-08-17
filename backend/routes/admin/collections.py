@@ -156,7 +156,11 @@ async def delete_collection(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    collection = await db.get(Collection, collection_id)
+    collection = (
+        await db.execute(
+            select(Collection).where(Collection.id == collection_id).with_for_update()
+        )
+    ).scalar_one_or_none()
     if collection is None:
         raise HTTPException(status_code=404, detail="Collection not found")
 
