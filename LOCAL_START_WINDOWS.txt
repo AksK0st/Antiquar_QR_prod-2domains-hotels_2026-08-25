@@ -1,0 +1,38 @@
+Antiquar QR - локальный запуск на Windows (CMD)
+
+1) Убедиться, что Docker Desktop запущен.
+2) Открыть CMD в корне проекта.
+3) Первый запуск:
+
+   docker compose up -d --build
+
+4) Проверить контейнеры:
+
+   docker compose ps
+
+5) Открыть:
+   Frontend:      http://localhost:5173
+   Backend docs:  http://localhost:8000/docs
+   MinIO console: http://localhost:9001
+
+6) Логи при ошибке:
+
+   docker compose logs --tail=200
+
+   или отдельно:
+   docker compose logs backend --tail=200
+   docker compose logs frontend --tail=200
+   docker compose logs minio --tail=200
+   docker compose logs db --tail=200
+
+7) Остановить:
+
+   docker compose down
+
+Важно:
+- Для локального запуска .env и .env.production НЕ нужны.
+- docker-compose.prod.yml для localhost не использовать.
+- Не выполняйте `docker compose down -v`, если хотите сохранить локальные данные PostgreSQL/MinIO.
+- Если нужен полный сброс локальных данных и node_modules volume, тогда только локально можно выполнить:
+  docker compose down -v
+  docker compose up -d --build
