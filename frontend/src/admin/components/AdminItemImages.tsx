@@ -363,8 +363,9 @@ function AdminItemImages({
                   src={getAdminItemImageUrl(
                     itemId,
                     image.id,
-                  )}
-                  alt={image.original_filename}
+                  ) ?? undefined
+                }
+                  alt={image.original_filename ?? 'Без названия'}
                   className="h-24 w-24 shrink-0 rounded-lg object-cover"
                 />
 
@@ -382,10 +383,12 @@ function AdminItemImages({
                   </div>
 
                   <p className="mt-2 text-xs text-stone-600">
-                    {formatBytes(image.size)}
-                    {' · '}
-                    позиция {index + 1}
-                  </p>
+                      {image.size !== null
+                        ? formatBytes(image.size)
+                        : 'Размер неизвестен'}
+                      {' · '}
+                      позиция {index + 1}
+                    </p>
 
                   {!image.is_primary && (
                     <button

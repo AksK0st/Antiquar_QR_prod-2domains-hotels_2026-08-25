@@ -278,3 +278,25 @@ The repository can provide health endpoints, scripts and timers, but the followi
 - physical QR test after the real domain is live.
 
 A release is not considered operationally complete until those checks are in place.
+
+## Local development (Windows / Docker Desktop)
+
+The default `docker-compose.yml` is the local/development stack and has local defaults, so an env file is optional.
+
+From Windows CMD in the project root:
+
+```cmd
+docker compose down
+docker compose up -d --build
+docker compose ps
+```
+
+Open:
+
+- frontend: `http://localhost:5173`
+- backend docs: `http://localhost:8000/docs`
+- MinIO console: `http://localhost:9001`
+
+If a stale local `frontend_node_modules` volume causes Vite/npm errors, `docker compose down -v` resets all local development volumes, including local DB/MinIO data. Never use `-v` on a production host.
+
+Production still uses `.env.production` + `docker-compose.prod.yml` / `ops/release/deploy.sh`.

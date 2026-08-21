@@ -1,18 +1,14 @@
 services:
   db:
     image: postgres:17.10-alpine3.24
-
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-
+      POSTGRES_DB: ${POSTGRES_DB:-antique_hotel}
+      POSTGRES_USER: ${POSTGRES_USER:-antique}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-antique}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-
     ports:
-      - "5432:5432"
-
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     healthcheck:
       test:
         [
@@ -21,24 +17,46 @@ services:
         ]
       interval: 5s
       timeout: 5s
-      retries: 5
+      retries: 12
 
+  minio:
+    build:
+      context: .
+      dockerfile: ops/minio/Dockerfile
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-antique}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-antique}
+    volumes:
+      - minio_data:/data
+    ports:
+      - "${MINIO_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          rm -rf /tmp/mc-health &&
+          mc --config-dir /tmp/mc-health alias set health http://127.0.0.1:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}" >/dev/null 2>&1 &&
+          mc --config-dir /tmp/mc-health ready health >/dev/null 2>&1
+      interval: 5s
+      timeout: 4s
+      retries: 20
+      start_period: 5s
 
   backend:
     build:
       context: ./backend
-
     environment:
       APP_ENV: ${APP_ENV:-development}
       SQL_ECHO: ${SQL_ECHO:-false}
-
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-antique_hotel}
+      POSTGRES_USER: ${POSTGRES_USER:-antique}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-antique}
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
-
-      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
       ADMIN_SESSION_TTL_HOURS: ${ADMIN_SESSION_TTL_HOURS:-12}
       ADMIN_IMAGE_MAX_BYTES: ${ADMIN_IMAGE_MAX_BYTES:-15728640}
       ADMIN_IMAGE_MAX_PIXELS: ${ADMIN_IMAGE_MAX_PIXELS:-40000000}
@@ -50,28 +68,22 @@ services:
       POSTGRES_MAX_OVERFLOW: ${POSTGRES_MAX_OVERFLOW:-5}
       POSTGRES_POOL_TIMEOUT_SECONDS: ${POSTGRES_POOL_TIMEOUT_SECONDS:-10}
       POSTGRES_STATEMENT_TIMEOUT_MS: ${POSTGRES_STATEMENT_TIMEOUT_MS:-15000}
-
-      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
-      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER}
-      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
-      MINIO_BUCKET: ${MINIO_BUCKET}
-      MINIO_SECURE: ${MINIO_SECURE}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-minio:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-antique}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-antique}
+      MINIO_BUCKET: ${MINIO_BUCKET:-antique-images}
+      MINIO_SECURE: ${MINIO_SECURE:-false}
       MINIO_CONNECT_TIMEOUT_SECONDS: ${MINIO_CONNECT_TIMEOUT_SECONDS:-3}
       MINIO_READ_TIMEOUT_SECONDS: ${MINIO_READ_TIMEOUT_SECONDS:-10}
-
     volumes:
       - ./backend:/backend
-
     ports:
-      - "8000:8000"
-
+      - "${BACKEND_HOST_PORT:-8000}:8000"
     depends_on:
       db:
         condition: service_healthy
-
       minio:
-        condition: service_started
-
+        condition: service_healthy
     command: >
       sh -c "
       alembic upgrade head &&
@@ -80,35 +92,19 @@ services:
       uvicorn main:app --host 0.0.0.0 --port 8000 --reload
       "
 
-  minio:
-    image: quay.io/minio/minio:RELEASE.2025-10-15T17-29-55Z
-    command: server /data --console-address ":9001"
-
-    environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-
-    volumes:
-      - minio_data:/data
-
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-
   frontend:
     build:
       context: ./frontend
-
+      dockerfile: Dockerfile.dev
+    environment:
+      VITE_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:5173}
     volumes:
       - ./frontend:/app
       - frontend_node_modules:/app/node_modules
-
     ports:
-      - "5173:5173"
-
+      - "${FRONTEND_HOST_PORT:-5173}:5173"
     depends_on:
       - backend
-
     command:
       - npm
       - run
@@ -116,7 +112,6 @@ services:
       - --
       - --host
       - 0.0.0.0
-
 
 volumes:
   postgres_data:

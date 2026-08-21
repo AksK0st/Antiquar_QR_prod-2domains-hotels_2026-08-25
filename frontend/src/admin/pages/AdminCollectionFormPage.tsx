@@ -87,6 +87,8 @@ function AdminCollectionFormPage() {
       return
     }
 
+    const validCollectionId = parsedCollectionId
+
     const controller = new AbortController()
     let cancelled = false
 
@@ -97,7 +99,7 @@ function AdminCollectionFormPage() {
       try {
         const collection =
           await getAdminCollection(
-            parsedCollectionId,
+            validCollectionId,
             controller.signal,
           )
 
