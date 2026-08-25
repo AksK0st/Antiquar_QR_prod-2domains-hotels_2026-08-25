@@ -26,16 +26,17 @@ async def main() -> None:
     print(f"Generating {len(items)} QR codes...\n")
 
     for item in items:
+        base_url = settings.public_base_url_for_hotel(item.hotel_name)
         png_data = generate_item_qr_png(
             public_id=item.public_id,
             name=item.name,
-            base_url=settings.public_base_url,
+            base_url=base_url,
         )
         output_path = OUTPUT_DIR / f"{item.slug}-{item.public_id}.png"
         output_path.write_bytes(png_data)
 
         url = build_item_public_url(
-            base_url=settings.public_base_url,
+            base_url=base_url,
             public_id=item.public_id,
         )
         print(f"[QR] {item.name}\n     {url}\n     -> {output_path}")

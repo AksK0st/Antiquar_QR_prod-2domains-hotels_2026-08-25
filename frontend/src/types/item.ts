@@ -10,6 +10,7 @@ export interface ItemImage {
 export interface ItemSummary {
   id: number
   public_id: string
+  hotel_name: string
   slug: string
   name: string
   short_description: string | null

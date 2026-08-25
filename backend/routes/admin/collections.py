@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import get_db
+from config import settings
 from models.admin_user import AdminUser
 from models.collection import Collection
 from models.item import Item
@@ -23,6 +24,14 @@ router = APIRouter(
     tags=["admin-collections"],
     dependencies=[Depends(get_current_admin)],
 )
+
+
+def _ensure_hotel_configured(hotel_name: str) -> None:
+    if hotel_name not in settings.hotel_names:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Hotel is not configured for any public domain",
+        )
 
 
 def _raise_integrity_error(exc: IntegrityError) -> None:
@@ -51,6 +60,7 @@ async def create_collection(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
+    _ensure_hotel_configured(data.hotel_name)
     collection = Collection(**data.model_dump())
     db.add(collection)
     try:
@@ -76,6 +86,7 @@ async def create_collection(
 @router.get("/", response_model=list[CollectionRead])
 async def get_collections(
     q: str | None = Query(default=None, max_length=100),
+    hotel_name: str | None = Query(default=None, max_length=255),
     limit: int = Query(default=100, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
@@ -84,8 +95,14 @@ async def get_collections(
     if q:
         pattern = f"%{q.strip()}%"
         statement = statement.where(
-            or_(Collection.name.ilike(pattern), Collection.slug.ilike(pattern))
+            or_(
+                Collection.name.ilike(pattern),
+                Collection.slug.ilike(pattern),
+                Collection.hotel_name.ilike(pattern),
+            )
         )
+    if hotel_name:
+        statement = statement.where(Collection.hotel_name == hotel_name.strip())
     result = await db.execute(statement.order_by(Collection.id).limit(limit).offset(offset))
     return result.scalars().all()
 
@@ -121,6 +138,17 @@ async def update_collection(
         )
 
     update_data = data.model_dump(exclude_unset=True, exclude={"expected_version"})
+    merged_hotel_name = update_data.get("hotel_name", collection.hotel_name)
+    _ensure_hotel_configured(merged_hotel_name)
+    if merged_hotel_name != collection.hotel_name:
+        item_result = await db.execute(
+            select(Item.id).where(Item.collection_id == collection_id).limit(1)
+        )
+        if item_result.scalar_one_or_none() is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Collection with items cannot change hotel",
+            )
     changed_fields: list[str] = []
     for field, value in update_data.items():
         if getattr(collection, field) != value:

@@ -17,6 +17,7 @@ SORT_ORDER_MAX = 1_000_000
 class _ItemTextNormalization(BaseModel):
     @field_validator(
         "slug",
+        "hotel_name",
         "name",
         "period_text",
         "country",
@@ -48,6 +49,7 @@ class _ItemTextNormalization(BaseModel):
 
 
 class ItemBase(_ItemTextNormalization):
+    hotel_name: str = Field(default="Галерея", min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=150, pattern=SLUG_PATTERN)
     name: str = Field(min_length=1, max_length=255)
     short_description: str | None = Field(default=None, max_length=2000)
@@ -80,6 +82,7 @@ class ItemCreate(ItemBase):
 
 
 class ItemUpdate(_ItemTextNormalization):
+    hotel_name: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=150, pattern=SLUG_PATTERN)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     short_description: str | None = Field(default=None, max_length=2000)
@@ -99,7 +102,7 @@ class ItemUpdate(_ItemTextNormalization):
 
     @model_validator(mode="after")
     def reject_null_for_required_fields(self):
-        for field_name in ("slug", "name", "sort_order", "is_active"):
+        for field_name in ("hotel_name", "slug", "name", "sort_order", "is_active"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
         return self
@@ -110,6 +113,7 @@ class ItemSummary(BaseModel):
 
     id: int
     public_id: UUID
+    hotel_name: str
     slug: str
     name: str
     short_description: str | None

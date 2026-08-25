@@ -39,8 +39,12 @@ class ApplicationHttpMiddleware(BaseHTTPMiddleware):
         ):
             origin = request.headers.get("origin")
             referer = request.headers.get("referer")
-            valid_origin = origin == settings.public_origin
-            valid_referer = referer is not None and referer.startswith(f"{settings.public_origin}/")
+            allowed_origins = settings.public_origins
+            valid_origin = origin in allowed_origins
+            valid_referer = referer is not None and any(
+                referer == allowed_origin or referer.startswith(f"{allowed_origin}/")
+                for allowed_origin in allowed_origins
+            )
             if not (valid_origin or valid_referer):
                 logger.warning(
                     "Rejected admin request with invalid origin",

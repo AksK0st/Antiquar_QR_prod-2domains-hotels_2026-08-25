@@ -6,10 +6,12 @@ import {
 import { useNavigate } from 'react-router'
 
 import { loginAdmin } from '../api/auth'
+import { useSite } from '../../site/SiteContext'
 
 
 function AdminLoginPage() {
   const navigate = useNavigate()
+  const { hotelName } = useSite()
 
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
@@ -65,7 +67,7 @@ function AdminLoginPage() {
         <div className="w-full">
           <div className="mb-10">
             <p className="mb-3 text-xs uppercase tracking-[0.25em] text-amber-500">
-              Отель «Галерея»
+              Отель «{hotelName}»
             </p>
 
             <h1 className="text-3xl font-semibold">

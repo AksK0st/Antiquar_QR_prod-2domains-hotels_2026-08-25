@@ -12,6 +12,10 @@ from http.cookiejar import CookieJar
 BASE = os.environ.get("SMOKE_BASE_URL", "http://localhost:8080").rstrip("/")
 ADMIN_USER = os.environ.get("SMOKE_ADMIN_USER", "ci-admin")
 ADMIN_PASSWORD = os.environ.get("SMOKE_ADMIN_PASSWORD", "CI-password-123456")
+PRIMARY_HOST = os.environ.get("SMOKE_PRIMARY_HOST", "gallery.local")
+SECONDARY_HOST = os.environ.get("SMOKE_SECONDARY_HOST", "second.local")
+PRIMARY_HOTEL = os.environ.get("SMOKE_PRIMARY_HOTEL", "Галерея")
+SECONDARY_HOTEL = os.environ.get("SMOKE_SECONDARY_HOTEL", "Вторая")
 
 
 def opener(with_cookies: bool = True):
@@ -19,9 +23,20 @@ def opener(with_cookies: bool = True):
     return urllib.request.build_opener(*handlers)
 
 
-def request(client, method: str, path: str, *, json_body=None, data=None, headers=None):
+def request(
+    client,
+    method: str,
+    path: str,
+    *,
+    json_body=None,
+    data=None,
+    headers=None,
+    host: str | None = None,
+):
     body = data
     request_headers = dict(headers or {})
+    if host is not None:
+        request_headers["Host"] = host
     if json_body is not None:
         body = json.dumps(json_body).encode()
         request_headers["Content-Type"] = "application/json"
@@ -71,7 +86,15 @@ def main() -> None:
     expect(200, status, "homepage")
     assert b'<div id="root"></div>' in body
 
-    status, _, body = request(public, "GET", "/api/public/items/")
+    for host, expected_hotel in (
+        (PRIMARY_HOST, PRIMARY_HOTEL),
+        (SECONDARY_HOST, SECONDARY_HOTEL),
+    ):
+        status, _, body = request(public, "GET", "/api/public/site/", host=host)
+        expect(200, status, f"site mapping for {host}")
+        assert as_json(body)["hotel_name"] == expected_hotel
+
+    status, _, body = request(public, "GET", "/api/public/items/", host=PRIMARY_HOST)
     expect(200, status, "public item list")
     seeded_items = as_json(body)
     assert seeded_items, "seed must provide at least one public item"
@@ -81,7 +104,7 @@ def main() -> None:
     expect(200, status, "direct immutable SPA route")
     assert b'<div id="root"></div>' in body
 
-    status, _, body = request(public, "GET", f"/api/public/items/by-public-id/{seeded['public_id']}")
+    status, _, body = request(public, "GET", f"/api/public/items/by-public-id/{seeded['public_id']}", host=PRIMARY_HOST)
     expect(200, status, "immutable public API lookup")
     assert as_json(body)["id"] == seeded["id"]
 
@@ -132,20 +155,41 @@ def main() -> None:
     expect(200, status, "admin me")
     assert headers.get("Cache-Control") == "no-store"
 
+    status, _, body = request(auth, "GET", "/api/admin/sites/")
+    expect(200, status, "admin sites")
+    configured_sites = as_json(body)["sites"]
+    assert {site["hotel_name"] for site in configured_sites} == {PRIMARY_HOTEL, SECONDARY_HOTEL}
+
     suffix = secrets.token_hex(5)
+    shared_collection_slug = f"ci-{suffix}"
+    shared_item_slug = f"ci-item-{suffix}"
+
     collection_payload = {
-        "slug": f"ci-{suffix}",
-        "name": "CI Collection",
+        "hotel_name": PRIMARY_HOTEL,
+        "slug": shared_collection_slug,
+        "name": "CI Primary Collection",
         "description": "created by release smoke test",
         "location": None,
     }
     status, _, body = request(auth, "POST", "/api/admin/collections/", json_body=collection_payload)
-    expect(201, status, "create collection")
+    expect(201, status, "create primary collection")
     collection = as_json(body)
 
+    secondary_collection_payload = dict(collection_payload)
+    secondary_collection_payload.update({
+        "hotel_name": SECONDARY_HOTEL,
+        "name": "CI Secondary Collection",
+    })
+    status, _, body = request(
+        auth, "POST", "/api/admin/collections/", json_body=secondary_collection_payload
+    )
+    expect(201, status, "same collection slug in secondary hotel")
+    secondary_collection = as_json(body)
+
     item_payload = {
-        "slug": f"ci-item-{suffix}",
-        "name": "CI Item",
+        "hotel_name": PRIMARY_HOTEL,
+        "slug": shared_item_slug,
+        "name": "CI Primary Item",
         "short_description": "smoke",
         "description": "release smoke item",
         "period_from": 1900,
@@ -161,13 +205,66 @@ def main() -> None:
         "is_active": True,
     }
     status, _, body = request(auth, "POST", "/api/admin/items/", json_body=item_payload)
-    expect(201, status, "create item")
+    expect(201, status, "create primary item")
     item = as_json(body)
     immutable_id = item["public_id"]
     original_version = item["version"]
 
-    status, _, _ = request(public, "GET", f"/api/public/items/by-public-id/{immutable_id}")
+    secondary_item_payload = dict(item_payload)
+    secondary_item_payload.update({
+        "hotel_name": SECONDARY_HOTEL,
+        "name": "CI Secondary Item",
+        "collection_id": secondary_collection["id"],
+    })
+    status, _, body = request(auth, "POST", "/api/admin/items/", json_body=secondary_item_payload)
+    expect(201, status, "same item slug in secondary hotel")
+    secondary_item = as_json(body)
+
+    # The same slug resolves to different records by domain, and immutable IDs never cross domains.
+    status, _, body = request(public, "GET", f"/api/public/items/{shared_item_slug}", host=PRIMARY_HOST)
+    expect(200, status, "primary slug isolation")
+    assert as_json(body)["id"] == item["id"]
+    status, _, body = request(public, "GET", f"/api/public/items/{shared_item_slug}", host=SECONDARY_HOST)
+    expect(200, status, "secondary slug isolation")
+    assert as_json(body)["id"] == secondary_item["id"]
+
+    status, _, _ = request(
+        public, "GET", f"/api/public/items/by-public-id/{immutable_id}", host=PRIMARY_HOST
+    )
     expect(200, status, "new item public lookup")
+    status, _, _ = request(
+        public, "GET", f"/api/public/items/by-public-id/{immutable_id}", host=SECONDARY_HOST
+    )
+    expect(404, status, "immutable ID blocked on other hotel domain")
+    status, _, _ = request(
+        public,
+        "GET",
+        f"/api/public/items/by-public-id/{secondary_item['public_id']}",
+        host=PRIMARY_HOST,
+    )
+    expect(404, status, "secondary immutable ID blocked on primary domain")
+
+    status, _, body = request(public, "GET", "/api/public/items/", host=PRIMARY_HOST)
+    expect(200, status, "primary item list isolation")
+    primary_ids = {row["id"] for row in as_json(body)}
+    assert item["id"] in primary_ids and secondary_item["id"] not in primary_ids
+    status, _, body = request(public, "GET", "/api/public/items/", host=SECONDARY_HOST)
+    expect(200, status, "secondary item list isolation")
+    secondary_ids = {row["id"] for row in as_json(body)}
+    assert secondary_item["id"] in secondary_ids and item["id"] not in secondary_ids
+
+    status, _, _ = request(
+        public, "GET", f"/api/public/collections/{collection['id']}", host=SECONDARY_HOST
+    )
+    expect(404, status, "collection blocked on other hotel domain")
+
+    invalid_cross_hotel = dict(secondary_item_payload)
+    invalid_cross_hotel.update({
+        "slug": f"ci-cross-{suffix}",
+        "collection_id": collection["id"],
+    })
+    status, _, _ = request(auth, "POST", "/api/admin/items/", json_body=invalid_cross_hotel)
+    expect(422, status, "cross-hotel collection assignment")
 
     updated_payload = dict(item_payload)
     updated_payload["slug"] = f"ci-renamed-{suffix}"
@@ -200,16 +297,19 @@ def main() -> None:
     assert image2["is_primary"] is False
 
     image2_path = f"/api/public/images/by-id/{image2['id']}/v/{image2['content_version']}"
-    status, headers, _ = request(public, "GET", image2_path)
+    status, headers, _ = request(public, "GET", image2_path, host=PRIMARY_HOST)
     expect(200, status, "stable public image route")
+    status, _, _ = request(public, "GET", image2_path, host=SECONDARY_HOST)
+    expect(404, status, "public image blocked on other hotel domain")
     etag = headers.get("ETag")
     assert etag, "stable public image route must return ETag"
-    status, _, _ = request(public, "GET", image2_path, headers={"If-None-Match": etag})
+    status, _, _ = request(public, "GET", image2_path, headers={"If-None-Match": etag}, host=PRIMARY_HOST)
     expect(304, status, "public image conditional GET")
     status, _, _ = request(
         public,
         "GET",
         f"/api/public/images/by-id/{image2['id']}/v/{image2['content_version'] + 1}",
+        host=PRIMARY_HOST,
     )
     expect(404, status, "nonexistent image content version")
 
@@ -241,7 +341,7 @@ def main() -> None:
     expect(200, status, "unpublish item")
     unpublished = as_json(body)
 
-    status, _, _ = request(public, "GET", f"/api/public/items/by-public-id/{immutable_id}")
+    status, _, _ = request(public, "GET", f"/api/public/items/by-public-id/{immutable_id}", host=PRIMARY_HOST)
     expect(410, status, "inactive public item")
 
     status, _, _ = request(
@@ -251,7 +351,25 @@ def main() -> None:
     )
     expect(204, status, "delete item")
     status, _, _ = request(auth, "DELETE", f"/api/admin/collections/{collection['id']}")
-    expect(204, status, "delete empty collection")
+    expect(204, status, "delete empty primary collection")
+
+    status, _, body = request(
+        auth,
+        "PATCH",
+        f"/api/admin/items/{secondary_item['id']}",
+        json_body={"is_active": False, "expected_version": secondary_item["version"]},
+    )
+    expect(200, status, "unpublish secondary item")
+    status, _, _ = request(
+        auth,
+        "DELETE",
+        f"/api/admin/items/{secondary_item['id']}?confirm_public_id={secondary_item['public_id']}",
+    )
+    expect(204, status, "delete secondary item")
+    status, _, _ = request(
+        auth, "DELETE", f"/api/admin/collections/{secondary_collection['id']}"
+    )
+    expect(204, status, "delete empty secondary collection")
 
     status, _, _ = request(auth, "POST", "/api/admin/auth/logout")
     expect(204, status, "logout")

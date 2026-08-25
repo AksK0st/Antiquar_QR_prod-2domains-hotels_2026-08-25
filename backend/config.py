@@ -72,6 +72,8 @@ class Settings(BaseSettings):
 
     # Public app
     public_base_url: str = Field(default="http://localhost:5173", repr=False)
+    public_sites: str = ""
+    default_hotel_name: str = Field(default="Галерея", min_length=1, max_length=255)
     cors_origins: str = "http://localhost:5173"
 
     model_config = SettingsConfigDict(
@@ -82,6 +84,12 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def validate_runtime_configuration(self) -> "Settings":
         parsed = urlparse(self.public_base_url)
+
+        self.default_hotel_name = self.default_hotel_name.strip()
+        if not self.default_hotel_name:
+            raise ValueError("DEFAULT_HOTEL_NAME must not be empty")
+
+        site_map = self._parse_public_sites(self.public_sites)
 
         if parsed.scheme not in {"http", "https"} or not parsed.hostname:
             raise ValueError("PUBLIC_BASE_URL must be an absolute http(s) URL")
@@ -99,6 +107,23 @@ class Settings(BaseSettings):
                 raise ValueError("PUBLIC_BASE_URL must be a clean application URL without credentials/query/fragment")
             if parsed.path not in {"", "/"}:
                 raise ValueError("PUBLIC_BASE_URL must point to the application root in production")
+
+            for site_hostname in site_map:
+                if site_hostname in {"localhost", "127.0.0.1", "::1"}:
+                    raise ValueError("PUBLIC_SITES must not contain localhost in production")
+                if site_hostname in _RESERVED_PRODUCTION_HOSTS or site_hostname.endswith(_RESERVED_PRODUCTION_SUFFIXES):
+                    raise ValueError("PUBLIC_SITES must use real production hostnames")
+
+            if site_map:
+                public_hostname = (parsed.hostname or "").lower().rstrip(".")
+                if public_hostname not in site_map:
+                    raise ValueError("PUBLIC_BASE_URL hostname must be present in PUBLIC_SITES")
+                if site_map[public_hostname] != self.default_hotel_name:
+                    raise ValueError(
+                        "PUBLIC_BASE_URL hostname must map to DEFAULT_HOTEL_NAME in PUBLIC_SITES"
+                    )
+                if len(site_map) == 2 and len(set(site_map.values())) != 2:
+                    raise ValueError("The two production domains must use different hotel names")
 
             if ".." in self.minio_bucket or ".-" in self.minio_bucket or "-." in self.minio_bucket:
                 raise ValueError("MINIO_BUCKET has invalid dot/hyphen placement")
@@ -124,6 +149,27 @@ class Settings(BaseSettings):
 
         self.public_base_url = self.public_base_url.rstrip("/")
         return self
+
+    @staticmethod
+    def _parse_public_sites(raw_value: str) -> dict[str, str]:
+        sites: dict[str, str] = {}
+        for raw_entry in raw_value.split(";"):
+            entry = raw_entry.strip()
+            if not entry:
+                continue
+            hostname, separator, hotel_name = entry.partition("=")
+            hostname = hostname.strip().lower().rstrip(".")
+            hotel_name = hotel_name.strip()
+            if not separator or not hostname or not hotel_name:
+                raise ValueError(
+                    "PUBLIC_SITES must use 'hostname=hotel name' entries separated by ';'"
+                )
+            if "://" in hostname or "/" in hostname or ":" in hostname:
+                raise ValueError("PUBLIC_SITES entries must contain hostnames without scheme/port/path")
+            if hostname in sites:
+                raise ValueError(f"Duplicate hostname in PUBLIC_SITES: {hostname}")
+            sites[hostname] = hotel_name
+        return sites
 
     @property
     def database_url(self) -> URL:
@@ -158,6 +204,50 @@ class Settings(BaseSettings):
         if parsed.port and not default_port:
             netloc = f"{netloc}:{parsed.port}"
         return f"{parsed.scheme}://{netloc}"
+
+    @property
+    def public_origins(self) -> list[str]:
+        if not self.public_sites.strip():
+            return [self.public_origin]
+        scheme = "https" if self.is_production else urlparse(self.public_base_url).scheme
+        return [f"{scheme}://{hostname}" for hostname in self.public_site_map]
+
+    @property
+    def public_site_map(self) -> dict[str, str]:
+        sites = self._parse_public_sites(self.public_sites)
+        if sites:
+            return sites
+        parsed = urlparse(self.public_base_url)
+        hostname = (parsed.hostname or "localhost").lower().rstrip(".")
+        return {hostname: self.default_hotel_name}
+
+    @property
+    def hotel_names(self) -> list[str]:
+        return list(dict.fromkeys(self.public_site_map.values()))
+
+    def hotel_name_for_host(self, host: str) -> str:
+        normalized = host.strip().lower().rstrip(".")
+        if normalized.startswith("[") and "]" in normalized:
+            normalized = normalized[1:normalized.index("]")]
+        elif ":" in normalized:
+            normalized = normalized.split(":", 1)[0]
+
+        hotel_name = self.public_site_map.get(normalized)
+        if hotel_name is not None:
+            return hotel_name
+        if not self.is_production:
+            return self.default_hotel_name
+        raise KeyError(normalized)
+
+    def public_base_url_for_hotel(self, hotel_name: str) -> str:
+        target = hotel_name.strip()
+        scheme = "https" if self.is_production else urlparse(self.public_base_url).scheme
+        if target == self.default_hotel_name:
+            return self.public_base_url
+        for hostname, configured_name in self.public_site_map.items():
+            if configured_name == target:
+                return f"{scheme}://{hostname}"
+        raise KeyError(target)
 
 
 @lru_cache

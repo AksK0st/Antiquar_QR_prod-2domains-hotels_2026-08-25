@@ -7,7 +7,9 @@ x-backend-env: &backend-env
   POSTGRES_PASSWORD: ci-database-password
   POSTGRES_HOST: db
   POSTGRES_PORT: "5432"
-  PUBLIC_BASE_URL: http://localhost:8080
+  PUBLIC_BASE_URL: http://gallery.local
+  PUBLIC_SITES: gallery.local=Галерея;second.local=Вторая
+  DEFAULT_HOTEL_NAME: Галерея
   CORS_ORIGINS: http://localhost:8080
   ADMIN_SESSION_TTL_HOURS: "1"
   ADMIN_IMAGE_MAX_BYTES: "1024"

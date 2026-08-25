@@ -14,10 +14,12 @@ import {
   logoutAdmin,
   type AdminUser,
 } from '../api/auth'
+import { useSite } from '../../site/SiteContext'
 
 
 function AdminLayout() {
   const navigate = useNavigate()
+  const { hotelName } = useSite()
 
   const [admin, setAdmin] =
     useState<AdminUser | null>(null)
@@ -140,7 +142,7 @@ function AdminLayout() {
         <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-4 px-4 py-5 sm:flex-row sm:items-center sm:px-6">
           <div>
             <p className="text-xs uppercase tracking-[0.22em] text-amber-600">
-              Отель «Галерея»
+              Отель «{hotelName}»
             </p>
 
             <p className="mt-1 font-medium">

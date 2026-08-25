@@ -11,7 +11,8 @@ ENV_FILE="$ENV_FILE" COMPOSE_FILE="$COMPOSE_FILE" "$PROJECT_ROOT/ops/release/pre
 . "$PROJECT_ROOT/ops/lib/env.sh"
 load_compose_env
 RELEASE_TAG=$(require_compose_env RELEASE_TAG)
-DOMAIN=$(require_compose_env DOMAIN)
+PRIMARY_DOMAIN=$(require_compose_env PRIMARY_DOMAIN)
+SECONDARY_DOMAIN=$(require_compose_env SECONDARY_DOMAIN)
 POSTGRES_DB=$(require_compose_env POSTGRES_DB)
 POSTGRES_USER=$(require_compose_env POSTGRES_USER)
 
@@ -62,19 +63,21 @@ trap - EXIT INT TERM
 
 echo "[7/7] Verify public readiness"
 if command -v curl >/dev/null 2>&1; then
-  i=0
-  until curl --fail --silent --show-error --max-time 5 "https://$DOMAIN/health/ready" >/dev/null; do
-    i=$((i + 1))
-    [ "$i" -lt 24 ] || {
-      echo "Deployment started but public readiness did not become healthy." >&2
-      compose ps
-      exit 1
-    }
-    sleep 5
+  for domain in "$PRIMARY_DOMAIN" "$SECONDARY_DOMAIN"; do
+    i=0
+    until curl --fail --silent --show-error --max-time 5 "https://$domain/health/ready" >/dev/null; do
+      i=$((i + 1))
+      [ "$i" -lt 24 ] || {
+        echo "Deployment started but public readiness did not become healthy for $domain." >&2
+        compose ps
+        exit 1
+      }
+      sleep 5
+    done
   done
 else
   echo "WARNING: curl is not installed; public readiness was not verified by deploy.sh" >&2
 fi
 
 compose ps
-echo "Deploy OK: https://$DOMAIN release=$RELEASE_TAG"
+echo "Deploy OK: https://$PRIMARY_DOMAIN + https://$SECONDARY_DOMAIN release=$RELEASE_TAG"

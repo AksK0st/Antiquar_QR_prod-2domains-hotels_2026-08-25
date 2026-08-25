@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, Uuid, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db import Base
@@ -17,6 +17,7 @@ if TYPE_CHECKING:
 class Item(Base):
     __tablename__ = "items"
     __table_args__ = (
+        Index("ix_items_hotel_slug", "hotel_name", "slug", unique=True),
         CheckConstraint("sort_order >= 0", name="ck_items_sort_order_nonnegative"),
         CheckConstraint(
             "period_from IS NULL OR period_to IS NULL OR period_from <= period_to",
@@ -32,7 +33,10 @@ class Item(Base):
         index=True,
         default=uuid4,
     )
-    slug: Mapped[str] = mapped_column(String(150), unique=True, index=True)
+    hotel_name: Mapped[str] = mapped_column(
+        String(255), nullable=False, default="Галерея", server_default="Галерея", index=True
+    )
+    slug: Mapped[str] = mapped_column(String(150), index=True)
     name: Mapped[str] = mapped_column(String(255))
     short_description: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)

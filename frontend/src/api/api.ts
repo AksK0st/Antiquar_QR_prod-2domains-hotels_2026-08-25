@@ -4,6 +4,14 @@ import type { Collection } from '../types/collection'
 
 const API_URL = '/api/public'
 
+export interface PublicSite {
+  hotel_name: string
+}
+
+export function getCurrentSite(signal?: AbortSignal): Promise<PublicSite> {
+  return apiFetch<PublicSite>(`${API_URL}/site/`, {}, signal)
+}
+
 export function getItems(signal?: AbortSignal): Promise<ItemSummary[]> {
   return apiFetch<ItemSummary[]>(`${API_URL}/items/`, {}, signal)
 }

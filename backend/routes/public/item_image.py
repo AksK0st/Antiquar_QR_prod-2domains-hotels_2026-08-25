@@ -14,6 +14,7 @@ from db import get_db
 from minio_client import MINIO_BUCKET, minio_client
 from models.item import Item
 from models.item_image import ItemImage
+from services.site import hotel_name_for_request
 
 
 logger = logging.getLogger(__name__)
@@ -79,12 +80,14 @@ async def get_image_by_stable_id(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    hotel_name = hotel_name_for_request(request)
     image = (
         await db.execute(
             select(ItemImage)
             .join(Item)
             .where(
                 Item.is_active.is_(True),
+                Item.hotel_name == hotel_name,
                 ItemImage.id == image_id,
                 ItemImage.content_version == content_version,
             )
@@ -101,11 +104,16 @@ async def get_image_by_slug(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    hotel_name = hotel_name_for_request(request)
     image = (
         await db.execute(
             select(ItemImage)
             .join(Item)
-            .where(Item.slug == item_slug, Item.is_active.is_(True))
+            .where(
+                Item.slug == item_slug,
+                Item.hotel_name == hotel_name,
+                Item.is_active.is_(True),
+            )
             .order_by(ItemImage.is_primary.desc(), ItemImage.sort_order, ItemImage.id)
             .limit(1)
         )
@@ -122,12 +130,14 @@ async def get_image_by_id(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
+    hotel_name = hotel_name_for_request(request)
     image = (
         await db.execute(
             select(ItemImage)
             .join(Item)
             .where(
                 Item.slug == item_slug,
+                Item.hotel_name == hotel_name,
                 Item.is_active.is_(True),
                 ItemImage.id == image_id,
             )

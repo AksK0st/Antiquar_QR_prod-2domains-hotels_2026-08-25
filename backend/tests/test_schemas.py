@@ -15,9 +15,10 @@ def test_item_slug_and_period_validation() -> None:
     with pytest.raises(ValidationError):
         ItemCreate(slug="item", name="Item", period_from=1900, period_to=1800)
 
-    item = ItemCreate(slug="  valid-slug  ", name="  Name  ")
+    item = ItemCreate(slug="  valid-slug  ", name="  Name  ", hotel_name="  Галерея  ")
     assert item.slug == "valid-slug"
     assert item.name == "Name"
+    assert item.hotel_name == "Галерея"
 
 
 def test_patch_rejects_null_required_fields() -> None:
@@ -56,6 +57,7 @@ def test_item_summary_contains_only_primary_image_metadata() -> None:
     item = SimpleNamespace(
         id=1,
         public_id=uuid4(),
+        hotel_name="Галерея",
         slug="item",
         name="Item",
         short_description=None,

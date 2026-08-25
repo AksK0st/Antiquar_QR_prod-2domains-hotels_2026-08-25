@@ -16,9 +16,12 @@ import {
   updateAdminCollection,
   type AdminCollectionPayload,
 } from '../api/collections'
+import { getAdminSites } from '../api/sites'
+import { useSite } from '../../site/SiteContext'
 
 
 interface FormState {
+  hotelName: string
   slug: string
   name: string
   description: string
@@ -27,6 +30,7 @@ interface FormState {
 
 
 const EMPTY_FORM: FormState = {
+  hotelName: '',
   slug: '',
   name: '',
   description: '',
@@ -54,6 +58,7 @@ function positiveId(value: string | undefined): number | null {
 
 function AdminCollectionFormPage() {
   const navigate = useNavigate()
+  const { hotelName: currentHotelName } = useSite()
 
   const {
     collectionId,
@@ -66,8 +71,10 @@ function AdminCollectionFormPage() {
   const [form, setForm] =
     useState<FormState>(EMPTY_FORM)
 
+  const [hotelNames, setHotelNames] = useState<string[]>([])
+
   const [isLoading, setIsLoading] =
-    useState(isEditing)
+    useState(true)
 
   const [isSaving, setIsSaving] =
     useState(false)
@@ -79,15 +86,14 @@ function AdminCollectionFormPage() {
 
 
   useEffect(() => {
-    if (!isEditing) return
     if (hasInvalidCollectionId || parsedCollectionId === null) {
-      setError('Некорректный идентификатор коллекции.')
-      setLoadFailed(true)
-      setIsLoading(false)
-      return
+      if (isEditing) {
+        setError('Некорректный идентификатор коллекции.')
+        setLoadFailed(true)
+        setIsLoading(false)
+        return
+      }
     }
-
-    const validCollectionId = parsedCollectionId
 
     const controller = new AbortController()
     let cancelled = false
@@ -97,25 +103,39 @@ function AdminCollectionFormPage() {
       setLoadFailed(false)
       setError(null)
       try {
-        const collection =
-          await getAdminCollection(
-            validCollectionId,
-            controller.signal,
-          )
+        const sites = await getAdminSites(controller.signal)
 
         if (cancelled) {
           return
         }
 
-        setCollectionVersion(collection.version)
-        setForm({
-          slug: collection.slug,
-          name: collection.name,
-          description:
-            collection.description ?? '',
-          location:
-            collection.location ?? '',
-        })
+        const names = sites.map((site) => site.hotel_name)
+        setHotelNames(names)
+
+        if (isEditing && parsedCollectionId !== null) {
+          const collection = await getAdminCollection(
+            parsedCollectionId,
+            controller.signal,
+          )
+
+          if (cancelled) return
+
+          setCollectionVersion(collection.version)
+          setForm({
+            hotelName: collection.hotel_name,
+            slug: collection.slug,
+            name: collection.name,
+            description: collection.description ?? '',
+            location: collection.location ?? '',
+          })
+        } else {
+          setForm((current) => ({
+            ...current,
+            hotelName: names.includes(currentHotelName)
+              ? currentHotelName
+              : names[0] ?? 'Галерея',
+          }))
+        }
       } catch (error) {
         if (cancelled) {
           return
@@ -169,6 +189,7 @@ function AdminCollectionFormPage() {
     isEditing,
     navigate,
     parsedCollectionId,
+    currentHotelName,
   ])
 
 
@@ -195,6 +216,7 @@ function AdminCollectionFormPage() {
 
     const payload:
     AdminCollectionPayload = {
+      hotel_name: form.hotelName,
       slug: form.slug.trim(),
       name: form.name.trim(),
 
@@ -245,8 +267,10 @@ function AdminCollectionFormPage() {
 
       if (error instanceof Error && error.message === 'VERSION_CONFLICT') {
         setError('Коллекция уже изменена в другой вкладке. Перезагрузите страницу.')
+      } else if (error instanceof Error && error.message === 'HOTEL_CHANGE_BLOCKED') {
+        setError('Нельзя сменить гостиницу у коллекции, пока в ней есть предметы.')
       } else if (error instanceof Error && error.message === 'SLUG_CONFLICT') {
-        setError('Такой slug уже используется другой коллекцией.')
+        setError('Такой slug уже используется другой коллекцией этой гостиницы.')
       } else {
         setError('Не удалось сохранить коллекцию.')
       }
@@ -314,6 +338,23 @@ function AdminCollectionFormPage() {
         className="mt-8 space-y-8"
       >
         <section className="rounded-xl border border-stone-800 bg-stone-900/40 p-6">
+          <label className="mb-5 block">
+            <span className="mb-2 block text-sm text-stone-400">
+              Гостиница
+            </span>
+
+            <select
+              required
+              value={form.hotelName}
+              onChange={(event) => setField('hotelName', event.target.value)}
+              className="w-full rounded-lg border border-stone-700 bg-stone-950 px-4 py-3 outline-none focus:border-amber-600"
+            >
+              {hotelNames.map((hotelName) => (
+                <option key={hotelName} value={hotelName}>{hotelName}</option>
+              ))}
+            </select>
+          </label>
+
           <div className="grid gap-5 md:grid-cols-2">
             <label>
               <span className="mb-2 block text-sm text-stone-400">

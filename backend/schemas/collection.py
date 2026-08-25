@@ -8,7 +8,7 @@ from .item import SLUG_PATTERN
 
 
 class _CollectionNormalization(BaseModel):
-    @field_validator("slug", "name", "location", mode="before", check_fields=False)
+    @field_validator("hotel_name", "slug", "name", "location", mode="before", check_fields=False)
     @classmethod
     def strip_short_strings(cls, value):
         if isinstance(value, str):
@@ -25,6 +25,7 @@ class _CollectionNormalization(BaseModel):
 
 
 class CollectionBase(_CollectionNormalization):
+    hotel_name: str = Field(default="Галерея", min_length=1, max_length=255)
     slug: str = Field(min_length=1, max_length=150, pattern=SLUG_PATTERN)
     name: str = Field(min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=20_000)
@@ -36,6 +37,7 @@ class CollectionCreate(CollectionBase):
 
 
 class CollectionUpdate(_CollectionNormalization):
+    hotel_name: str | None = Field(default=None, min_length=1, max_length=255)
     slug: str | None = Field(default=None, min_length=1, max_length=150, pattern=SLUG_PATTERN)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = Field(default=None, max_length=20_000)
@@ -44,7 +46,7 @@ class CollectionUpdate(_CollectionNormalization):
 
     @model_validator(mode="after")
     def reject_null_for_required_fields(self):
-        for field_name in ("slug", "name"):
+        for field_name in ("hotel_name", "slug", "name"):
             if field_name in self.model_fields_set and getattr(self, field_name) is None:
                 raise ValueError(f"{field_name} cannot be null")
         return self

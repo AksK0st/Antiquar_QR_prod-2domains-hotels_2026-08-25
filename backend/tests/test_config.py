@@ -42,6 +42,30 @@ def test_valid_production_settings_are_normalized() -> None:
     assert settings.admin_session_cookie_name == "__Host-admin_session"
 
 
+def test_public_sites_map_domains_to_hotel_names() -> None:
+    settings = Settings(
+        **BASE,
+        public_base_url="http://gallery.local",
+        public_sites="gallery.local=Галерея;second.local=Вторая",
+    )
+    assert settings.hotel_name_for_host("gallery.local:8080") == "Галерея"
+    assert settings.hotel_name_for_host("second.local") == "Вторая"
+    assert settings.public_base_url_for_hotel("Вторая") == "http://second.local"
+
+
+def test_production_two_domains_require_distinct_hotel_names() -> None:
+    with pytest.raises(ValidationError):
+        Settings(
+            **BASE,
+            app_env="production",
+            public_base_url="https://gallery.real-museum.ru",
+            public_sites=(
+                "gallery.real-museum.ru=Галерея;"
+                "second.real-museum.ru=Галерея"
+            ),
+        )
+
+
 def test_production_rejects_example_placeholders() -> None:
     broken = dict(BASE)
     broken["postgres_password"] = "REPLACE_WITH_A_LONG_RANDOM_DATABASE_PASSWORD"
@@ -96,4 +120,40 @@ def test_minio_bucket_rejects_uppercase_and_ip_like_name() -> None:
             **broken,
             app_env="production",
             public_base_url="https://museum.example-museum.ru",
+        )
+
+
+def test_public_origins_include_both_configured_domains() -> None:
+    values = dict(BASE)
+    values["postgres_password"] = "db-2N64DbF0sKtxh1uQ3"
+    values["minio_secret_key"] = "s3-VkK7pM9gQ2rT6xL4z"
+    settings = Settings(
+        **values,
+        app_env="production",
+        public_base_url="https://gallery.real-museum.ru",
+        public_sites=(
+            "gallery.real-museum.ru=Галерея;"
+            "second.real-museum.ru=Вторая"
+        ),
+    )
+    assert settings.public_origins == [
+        "https://gallery.real-museum.ru",
+        "https://second.real-museum.ru",
+    ]
+
+
+def test_production_primary_domain_must_map_to_default_hotel() -> None:
+    values = dict(BASE)
+    values["postgres_password"] = "db-2N64DbF0sKtxh1uQ3"
+    values["minio_secret_key"] = "s3-VkK7pM9gQ2rT6xL4z"
+    with pytest.raises(ValidationError):
+        Settings(
+            **values,
+            app_env="production",
+            public_base_url="https://gallery.real-museum.ru",
+            public_sites=(
+                "gallery.real-museum.ru=Не Галерея;"
+                "second.real-museum.ru=Вторая"
+            ),
+            default_hotel_name="Галерея",
         )

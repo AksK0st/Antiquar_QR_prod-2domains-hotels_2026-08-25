@@ -1,6 +1,7 @@
 export interface AdminItem {
   id: number
   public_id: string
+  hotel_name: string
   version: number
   created_at: string
   updated_at: string

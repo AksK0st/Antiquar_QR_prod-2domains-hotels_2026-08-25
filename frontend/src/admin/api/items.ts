@@ -4,6 +4,7 @@ import type { AdminItem } from '../types/item'
 const ADMIN_ITEMS_URL = '/api/admin/items'
 
 export interface AdminItemPayload {
+  hotel_name: string
   slug: string
   name: string
   short_description: string | null
@@ -36,6 +37,7 @@ function mapError(error: unknown): never {
 export async function getAdminItems(
   options: {
     q?: string
+    hotelName?: string
     collectionId?: number
     isActive?: boolean
     limit?: number
@@ -45,6 +47,7 @@ export async function getAdminItems(
 ): Promise<AdminItem[]> {
   const params = new URLSearchParams()
   if (options.q) params.set('q', options.q)
+  if (options.hotelName) params.set('hotel_name', options.hotelName)
   if (options.collectionId !== undefined) params.set('collection_id', String(options.collectionId))
   if (options.isActive !== undefined) params.set('is_active', String(options.isActive))
   params.set('limit', String(options.limit ?? 100))

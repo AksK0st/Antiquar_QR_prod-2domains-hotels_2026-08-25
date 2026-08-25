@@ -1,4 +1,4 @@
-{$DOMAIN} {
+{$PRIMARY_DOMAIN}, {$SECONDARY_DOMAIN} {
     encode zstd gzip
 
     request_body {

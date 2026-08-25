@@ -44,6 +44,15 @@ jobs:
     needs: [backend-unit, frontend]
     steps:
       - uses: actions/checkout@v4
+      - name: Validate operational scripts
+        run: |
+          test -x ops/release/preflight.sh
+          test -x ops/release/deploy.sh
+          test -x ops/release/rollback-app.sh
+          test -x ops/backup/backup.sh
+          test -x ops/backup/restore.sh
+          test -x ops/maintenance/daily.sh
+          for script in ops/release/*.sh ops/backup/*.sh ops/maintenance/*.sh; do sh -n "$script"; done
       - name: Validate compose files
         run: |
           docker compose -f docker-compose.ci.yml config -q

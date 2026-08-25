@@ -104,7 +104,9 @@ docker compose --env-file .env.production -f docker-compose.prod.yml \
 
 Copy `.env.production.example` to `.env.production` and replace every placeholder. At minimum set:
 
-- `DOMAIN` — real DNS name pointing to the server;
+- `PRIMARY_DOMAIN` — primary DNS name (currently the «Галерея» site);
+- `SECONDARY_DOMAIN` — second hotel DNS name;
+- `PUBLIC_SITES` — `hostname=hotel name` mapping, separated by `;`;
 - `RELEASE_TAG` — immutable release identifier, preferably a Git SHA/tag;
 - PostgreSQL credentials;
 - MinIO root credentials (bootstrap only);
@@ -123,7 +125,7 @@ Run the preflight before every release:
 
 Prerequisites:
 
-- DNS already points `DOMAIN` to the host;
+- DNS for both `PRIMARY_DOMAIN` and `SECONDARY_DOMAIN` already points to this host;
 - inbound `80/443` are open;
 - PostgreSQL/MinIO ports are **not** exposed by the host firewall;
 - `.env.production` contains real secrets and a new `RELEASE_TAG`;
@@ -149,21 +151,21 @@ Runtime containers never invoke the migration or MinIO bootstrap jobs implicitly
 
 After deployment verify with a physical phone over mobile Internet:
 
-- `https://<domain>/`;
-- `https://<domain>/health/ready`;
+- `https://<each-domain>/`;
+- `https://<each-domain>/health/ready`;
 - one `/i/<public_id>` QR route;
 - its images;
 - admin login/logout.
 
 ## Rollback
 
-Application-only rollback:
+Application-only rollback is fail-closed. First verify that the target application is backward-compatible with the **current** PostgreSQL schema and data, then explicitly unlock the operation:
 
 ```bash
-./ops/release/rollback-app.sh <previous-release-tag>
+ALLOW_APP_ONLY_ROLLBACK=1 ./ops/release/rollback-app.sh <previous-release-tag>
 ```
 
-This deliberately **does not downgrade PostgreSQL**. Use it only when migrations introduced after the target release are backward-compatible. For incompatible schema changes, restore a tested backup instead of attempting an improvised Alembic downgrade in production.
+Without `ALLOW_APP_ONLY_ROLLBACK=1` the script refuses to change application images. It deliberately **does not downgrade PostgreSQL**. For incompatible schema changes, restore a tested backup instead of attempting an improvised Alembic downgrade in production.
 
 Keep old application images until the release has been stable long enough to make rollback unnecessary.
 

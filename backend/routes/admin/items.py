@@ -32,13 +32,31 @@ router = APIRouter(
 )
 
 
-async def _ensure_collection_exists(db: AsyncSession, collection_id: int | None) -> None:
+def _ensure_hotel_configured(hotel_name: str) -> None:
+    if hotel_name not in settings.hotel_names:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Hotel is not configured for any public domain",
+        )
+
+
+async def _ensure_collection_exists(
+    db: AsyncSession,
+    collection_id: int | None,
+    hotel_name: str,
+) -> None:
     if collection_id is None:
         return
-    if await db.get(Collection, collection_id) is None:
+    collection = await db.get(Collection, collection_id)
+    if collection is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Collection not found",
+        )
+    if collection.hotel_name != hotel_name:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Collection belongs to another hotel",
         )
 
 
@@ -67,11 +85,19 @@ async def get_item_qr(item_id: int, db: AsyncSession = Depends(get_db)):
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
 
+    try:
+        base_url = settings.public_base_url_for_hotel(item.hotel_name)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Item hotel is not configured for any public domain",
+        ) from exc
+
     png_data = await run_in_threadpool(
         generate_item_qr_png,
         public_id=item.public_id,
         name=item.name,
-        base_url=settings.public_base_url,
+        base_url=base_url,
     )
     return Response(
         content=png_data,
@@ -90,7 +116,8 @@ async def create_item(
     admin: AdminUser = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    await _ensure_collection_exists(db, data.collection_id)
+    _ensure_hotel_configured(data.hotel_name)
+    await _ensure_collection_exists(db, data.collection_id, data.hotel_name)
     item = Item(**data.model_dump())
     db.add(item)
     try:
@@ -116,6 +143,7 @@ async def create_item(
 @router.get("/", response_model=list[AdminItemResponse])
 async def get_items(
     q: str | None = Query(default=None, max_length=100),
+    hotel_name: str | None = Query(default=None, max_length=255),
     collection_id: int | None = Query(default=None, ge=1),
     is_active: bool | None = None,
     limit: int = Query(default=100, ge=1, le=200),
@@ -125,7 +153,15 @@ async def get_items(
     statement = select(Item)
     if q:
         pattern = f"%{q.strip()}%"
-        statement = statement.where(or_(Item.name.ilike(pattern), Item.slug.ilike(pattern)))
+        statement = statement.where(
+            or_(
+                Item.name.ilike(pattern),
+                Item.slug.ilike(pattern),
+                Item.hotel_name.ilike(pattern),
+            )
+        )
+    if hotel_name:
+        statement = statement.where(Item.hotel_name == hotel_name.strip())
     if collection_id is not None:
         statement = statement.where(Item.collection_id == collection_id)
     if is_active is not None:
@@ -138,8 +174,14 @@ async def get_items(
 
 
 @router.get("/by-slug/{slug}", response_model=AdminItemResponse)
-async def get_item_by_slug(slug: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Item).where(Item.slug == slug))
+async def get_item_by_slug(
+    slug: str,
+    hotel_name: str = Query(..., min_length=1, max_length=255),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Item).where(Item.slug == slug, Item.hotel_name == hotel_name.strip())
+    )
     item = result.scalar_one_or_none()
     if item is None:
         raise HTTPException(status_code=404, detail="Item not found")
@@ -175,7 +217,13 @@ async def update_item(
         )
 
     update_data = data.model_dump(exclude_unset=True, exclude={"expected_version"})
-    await _ensure_collection_exists(db, update_data.get("collection_id", item.collection_id))
+    merged_hotel_name = update_data.get("hotel_name", item.hotel_name)
+    _ensure_hotel_configured(merged_hotel_name)
+    await _ensure_collection_exists(
+        db,
+        update_data.get("collection_id", item.collection_id),
+        merged_hotel_name,
+    )
 
     merged_period_from = update_data.get("period_from", item.period_from)
     merged_period_to = update_data.get("period_to", item.period_to)

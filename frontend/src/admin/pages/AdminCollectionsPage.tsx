@@ -16,6 +16,7 @@ import {
 import type {
   AdminCollection,
 } from '../types/collection'
+import { getAdminSites, type AdminSite } from '../api/sites'
 
 const PAGE_SIZE = 50
 
@@ -36,6 +37,8 @@ function AdminCollectionsPage() {
       useState<number | null>(null)
   const [searchInput, setSearchInput] = useState('')
   const [submittedSearch, setSubmittedSearch] = useState('')
+  const [hotelFilter, setHotelFilter] = useState('')
+  const [sites, setSites] = useState<AdminSite[]>([])
   const [reloadKey, setReloadKey] = useState(0)
   const [page, setPage] = useState(0)
 
@@ -49,7 +52,7 @@ function AdminCollectionsPage() {
       setError(null)
       try {
         const loaded =
-          await getAdminCollections({ q: submittedSearch || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
+          await getAdminCollections({ q: submittedSearch || undefined, hotelName: hotelFilter || undefined, limit: PAGE_SIZE, offset: page * PAGE_SIZE, signal: controller.signal })
 
         if (!cancelled) {
           setCollections(loaded)
@@ -89,7 +92,20 @@ function AdminCollectionsPage() {
       cancelled = true
       controller.abort()
     }
-  }, [navigate, reloadKey, page, submittedSearch])
+  }, [hotelFilter, navigate, reloadKey, page, submittedSearch])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    getAdminSites(controller.signal)
+      .then(setSites)
+      .catch((requestError) => {
+        if (controller.signal.aborted) return
+        if (requestError instanceof Error && requestError.message === 'UNAUTHORIZED') {
+          navigate('/admin/login', { replace: true })
+        }
+      })
+    return () => controller.abort()
+  }, [navigate])
 
 
   async function handleDelete(
@@ -205,6 +221,20 @@ function AdminCollectionsPage() {
           maxLength={100}
           className="min-w-0 flex-1 rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
         />
+        <select
+          aria-label="Фильтр по гостинице"
+          value={hotelFilter}
+          onChange={(event) => {
+            setHotelFilter(event.target.value)
+            setPage(0)
+          }}
+          className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
+        >
+          <option value="">Все гостиницы</option>
+          {sites.map((site) => (
+            <option key={site.hotel_name} value={site.hotel_name}>{site.hotel_name}</option>
+          ))}
+        </select>
         <button type="submit" className="rounded-lg border border-stone-700 px-4 py-2 text-sm">Найти</button>
       </form>
 
@@ -241,6 +271,10 @@ function AdminCollectionsPage() {
 
                     <span className="rounded bg-stone-800 px-2 py-1 font-mono text-xs text-stone-500">
                       {collection.slug}
+                    </span>
+
+                    <span className="rounded bg-stone-800 px-2 py-1 text-xs text-stone-400">
+                      {collection.hotel_name}
                     </span>
                   </div>
 

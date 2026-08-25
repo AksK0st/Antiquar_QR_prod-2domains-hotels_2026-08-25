@@ -1,7 +1,10 @@
 import { Link } from 'react-router'
+import { useSite } from '../site/SiteContext'
 
 
 function Header() {
+  const { hotelName } = useSite()
+
   return (
     <header className="
       border-b
@@ -17,7 +20,7 @@ function Header() {
           className="group"
         >
           <div className="font-display text-2xl leading-none tracking-tight">
-            Отель "Галерея"
+            Отель «{hotelName}»
           </div>
 
           <div className="mt-2 text-xs uppercase tracking-[0.3em] text-[#c09a6d]">

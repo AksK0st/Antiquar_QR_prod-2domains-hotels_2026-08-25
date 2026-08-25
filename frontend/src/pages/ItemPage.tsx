@@ -14,9 +14,11 @@ import { ApiError } from '../api/client'
 import ItemGallery from '../components/ItemGallery'
 
 import type { Item } from '../types/item'
+import { useSite } from '../site/SiteContext'
 
 
 function ItemPage() {
+  const { hotelName } = useSite()
   const { slug, publicId } = useParams()
 
   const [item, setItem] = useState<Item | null>(null)
@@ -73,7 +75,7 @@ function ItemPage() {
     const descriptionTag = document.querySelector<HTMLMetaElement>('meta[name="description"]')
     const previousDescription = descriptionTag?.content ?? null
 
-    document.title = `${item.name} — Отель «Галерея»`
+    document.title = `${item.name} — Отель «${hotelName}»`
     if (descriptionTag) {
       descriptionTag.content = item.short_description
         ?? `История и описание экспоната «${item.name}».`
@@ -85,7 +87,7 @@ function ItemPage() {
         descriptionTag.content = previousDescription
       }
     }
-  }, [item])
+  }, [hotelName, item])
 
 
   if (loading) {

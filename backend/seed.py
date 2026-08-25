@@ -29,10 +29,13 @@ async def seed_collections(
 ) -> None:
     collections = load_json("collections.json")
 
-    for data in collections:
+    for raw_data in collections:
+        data = raw_data.copy()
+        data.setdefault("hotel_name", "Галерея")
         result = await db.execute(
             select(Collection).where(
-                Collection.slug == data["slug"]
+                Collection.slug == data["slug"],
+                Collection.hotel_name == data["hotel_name"],
             )
         )
 
@@ -62,10 +65,12 @@ async def seed_items(
 
     for raw_data in items:
         data = raw_data.copy()
+        data.setdefault("hotel_name", "Галерея")
 
         result = await db.execute(
             select(Item).where(
-                Item.slug == data["slug"]
+                Item.slug == data["slug"],
+                Item.hotel_name == data["hotel_name"],
             )
         )
 
@@ -87,8 +92,8 @@ async def seed_items(
         if collection_slug is not None:
             result = await db.execute(
                 select(Collection).where(
-                    Collection.slug
-                    == collection_slug
+                    Collection.slug == collection_slug,
+                    Collection.hotel_name == data["hotel_name"],
                 )
             )
 

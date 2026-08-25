@@ -3,6 +3,7 @@ import type { AdminCollection } from '../types/collection'
 
 const ADMIN_COLLECTIONS_URL = '/api/admin/collections'
 export interface AdminCollectionPayload {
+  hotel_name: string
   slug: string
   name: string
   description: string | null
@@ -16,6 +17,7 @@ function mapError(error: unknown): never {
     if (error.status === 409) {
       if (error.detail?.includes('modified by another session')) throw new Error('VERSION_CONFLICT')
       if (error.detail?.includes('contains items')) throw new Error('COLLECTION_NOT_EMPTY')
+      if (error.detail?.includes('cannot change hotel')) throw new Error('HOTEL_CHANGE_BLOCKED')
       throw new Error('SLUG_CONFLICT')
     }
   }
@@ -23,10 +25,11 @@ function mapError(error: unknown): never {
 }
 
 export async function getAdminCollections(
-  options: { q?: string; limit?: number; offset?: number; signal?: AbortSignal } = {},
+  options: { q?: string; hotelName?: string; limit?: number; offset?: number; signal?: AbortSignal } = {},
 ): Promise<AdminCollection[]> {
   const params = new URLSearchParams()
   if (options.q) params.set('q', options.q)
+  if (options.hotelName) params.set('hotel_name', options.hotelName)
   params.set('limit', String(options.limit ?? 100))
   params.set('offset', String(options.offset ?? 0))
   try { return await apiFetch<AdminCollection[]>(`${ADMIN_COLLECTIONS_URL}/?${params}`, {}, options.signal) }

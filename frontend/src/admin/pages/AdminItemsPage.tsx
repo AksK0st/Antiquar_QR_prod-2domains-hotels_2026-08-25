@@ -13,6 +13,7 @@ import {
   setItemActive,
 } from '../api/items'
 import { getAdminCollections } from '../api/collections'
+import { getAdminSites, type AdminSite } from '../api/sites'
 
 import type { AdminCollection } from '../types/collection'
 import type { AdminItem } from '../types/item'
@@ -37,8 +38,10 @@ function AdminItemsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [submittedSearch, setSubmittedSearch] = useState('')
   const [collectionFilter, setCollectionFilter] = useState('')
+  const [hotelFilter, setHotelFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [collections, setCollections] = useState<AdminCollection[]>([])
+  const [sites, setSites] = useState<AdminSite[]>([])
   const [reloadKey, setReloadKey] = useState(0)
   const [page, setPage] = useState(0)
 
@@ -53,6 +56,7 @@ function AdminItemsPage() {
         const loadedItems =
           await getAdminItems({
             q: submittedSearch || undefined,
+            hotelName: hotelFilter || undefined,
             collectionId: collectionFilter ? Number(collectionFilter) : undefined,
             isActive: statusFilter === 'active' ? true : statusFilter === 'inactive' ? false : undefined,
             limit: PAGE_SIZE,
@@ -98,13 +102,19 @@ function AdminItemsPage() {
       cancelled = true
       controller.abort()
     }
-  }, [collectionFilter, navigate, reloadKey, page, statusFilter, submittedSearch])
+  }, [collectionFilter, hotelFilter, navigate, reloadKey, page, statusFilter, submittedSearch])
 
   useEffect(() => {
     const controller = new AbortController()
 
-    getAdminCollections({ limit: 200, signal: controller.signal })
-      .then(setCollections)
+    Promise.all([
+      getAdminCollections({ limit: 200, signal: controller.signal }),
+      getAdminSites(controller.signal),
+    ])
+      .then(([loadedCollections, loadedSites]) => {
+        setCollections(loadedCollections)
+        setSites(loadedSites)
+      })
       .catch((requestError) => {
         if (controller.signal.aborted) return
         if (requestError instanceof Error && requestError.message === 'UNAUTHORIZED') {
@@ -215,6 +225,21 @@ function AdminItemsPage() {
           className="min-w-0 flex-1 rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
         />
         <select
+          aria-label="Фильтр по гостинице"
+          value={hotelFilter}
+          onChange={(event) => {
+            setHotelFilter(event.target.value)
+            setCollectionFilter('')
+            setPage(0)
+          }}
+          className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
+        >
+          <option value="">Все гостиницы</option>
+          {sites.map((site) => (
+            <option key={site.hotel_name} value={site.hotel_name}>{site.hotel_name}</option>
+          ))}
+        </select>
+        <select
           aria-label="Фильтр по коллекции"
           value={collectionFilter}
           onChange={(event) => {
@@ -224,7 +249,9 @@ function AdminItemsPage() {
           className="rounded-lg border border-stone-700 bg-stone-900 px-4 py-2 text-sm"
         >
           <option value="">Все коллекции</option>
-          {collections.map((collection) => (
+          {collections
+            .filter((collection) => !hotelFilter || collection.hotel_name === hotelFilter)
+            .map((collection) => (
             <option key={collection.id} value={collection.id}>{collection.name}</option>
           ))}
         </select>
@@ -275,6 +302,10 @@ function AdminItemsPage() {
                       ? 'Опубликован'
                       : 'Скрыт'}
                   </span>
+
+                  <span className="rounded-full bg-stone-800 px-2.5 py-1 text-xs text-stone-400">
+                    {item.hotel_name}
+                  </span>
                 </div>
 
                 <p className="mt-1 text-sm text-stone-500">
@@ -283,13 +314,14 @@ function AdminItemsPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
-                <Link
-                  to={`/i/${item.public_id}`}
+                <a
+                  href={`${sites.find((site) => site.hotel_name === item.hotel_name)?.base_url ?? ''}/i/${item.public_id}`}
                   target="_blank"
+                  rel="noreferrer"
                   className="rounded-lg border border-stone-700 px-3 py-2 text-sm text-stone-300 hover:border-stone-500"
                 >
                   Открыть
-                </Link>
+                </a>
 
                 <Link
                   to={`/admin/items/${item.id}`}

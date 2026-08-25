@@ -18,6 +18,8 @@ import {
 } from '../api/items'
 
 import { getAdminCollections } from '../api/collections'
+import { getAdminSites } from '../api/sites'
+import { useSite } from '../../site/SiteContext'
 
 import type { AdminCollection } from '../types/collection'
 
@@ -27,6 +29,7 @@ import AdminItemQr from '../components/AdminItemQr'
 
 
 interface FormState {
+  hotelName: string
   slug: string
   name: string
   shortDescription: string
@@ -45,12 +48,14 @@ interface FormState {
 }
 
 interface SavedQrIdentity {
+  hotelName: string
   name: string
   slug: string
 }
 
 
 const EMPTY_FORM: FormState = {
+  hotelName: '',
   slug: '',
   name: '',
   shortDescription: '',
@@ -102,6 +107,7 @@ function positiveId(value: string | undefined): number | null {
 function AdminItemFormPage() {
   const navigate = useNavigate()
   const { itemId } = useParams()
+  const { hotelName: currentHotelName } = useSite()
 
   const isEditing = itemId !== undefined
   const parsedItemId = positiveId(itemId)
@@ -112,6 +118,8 @@ function AdminItemFormPage() {
 
   const [collections, setCollections] =
     useState<AdminCollection[]>([])
+
+  const [hotelNames, setHotelNames] = useState<string[]>([])
 
   const [isLoading, setIsLoading] =
     useState(true)
@@ -147,14 +155,18 @@ function AdminItemFormPage() {
       setLoadFailed(false)
       setError(null)
       try {
-        const collectionsResult =
-          await getAdminCollections({ signal: controller.signal })
+        const [collectionsResult, sitesResult] = await Promise.all([
+          getAdminCollections({ limit: 200, signal: controller.signal }),
+          getAdminSites(controller.signal),
+        ])
 
         if (cancelled) {
           return
         }
 
         setCollections(collectionsResult)
+        const names = sitesResult.map((site) => site.hotel_name)
+        setHotelNames(names)
 
         if (
           isEditing &&
@@ -168,12 +180,14 @@ function AdminItemFormPage() {
           }
 
           setSavedQrIdentity({
+            hotelName: item.hotel_name,
             name: item.name,
             slug: item.slug,
           })
           setItemVersion(item.version)
           setPublicId(item.public_id)
           setForm({
+            hotelName: item.hotel_name,
             slug: item.slug,
             name: item.name,
             shortDescription:
@@ -203,6 +217,13 @@ function AdminItemFormPage() {
             isActive:
               item.is_active,
           })
+        } else {
+          setForm((current) => ({
+            ...current,
+            hotelName: names.includes(currentHotelName)
+              ? currentHotelName
+              : names[0] ?? 'Галерея',
+          }))
         }
       } catch (error) {
         if (cancelled) {
@@ -245,6 +266,7 @@ function AdminItemFormPage() {
     isEditing,
     navigate,
     parsedItemId,
+    currentHotelName,
   ])
 
 
@@ -268,6 +290,7 @@ function AdminItemFormPage() {
     setIsSaving(true)
 
     const payload: AdminItemPayload = {
+      hotel_name: form.hotelName,
       slug: form.slug.trim(),
       name: form.name.trim(),
 
@@ -324,6 +347,7 @@ function AdminItemFormPage() {
           )
 
         setSavedQrIdentity({
+          hotelName: updated.hotel_name,
           name: updated.name,
           slug: updated.slug,
         })
@@ -365,7 +389,7 @@ function AdminItemFormPage() {
       if (error instanceof Error && error.message === 'VERSION_CONFLICT') {
         setError('Предмет уже изменён в другой вкладке. Перезагрузите страницу перед сохранением.')
       } else if (error instanceof Error && error.message === 'SLUG_CONFLICT') {
-        setError('Такой slug уже используется другим предметом.')
+        setError('Такой slug уже используется другим предметом этой гостиницы.')
       } else {
         setError('Не удалось сохранить предмет.')
       }
@@ -399,6 +423,8 @@ function AdminItemFormPage() {
   const hasUnsavedQrChanges =
   savedQrIdentity !== null &&
   (
+    form.hotelName.trim() !==
+      savedQrIdentity.hotelName ||
     form.slug.trim() !==
       savedQrIdentity.slug ||
     form.name.trim() !==
@@ -633,7 +659,36 @@ function AdminItemFormPage() {
             Каталог
           </h2>
 
-          <div className="mt-5 grid gap-5 md:grid-cols-2">
+          <div className="mt-5 grid gap-5 md:grid-cols-3">
+            <label>
+              <span className="mb-2 block text-sm text-stone-400">
+                Гостиница
+              </span>
+
+              <select
+                required
+                value={form.hotelName}
+                onChange={(event) => {
+                  const hotelName = event.target.value
+                  const selectedCollection = collections.find(
+                    (collection) => collection.id.toString() === form.collectionId,
+                  )
+                  setForm((current) => ({
+                    ...current,
+                    hotelName,
+                    collectionId: selectedCollection?.hotel_name === hotelName
+                      ? current.collectionId
+                      : '',
+                  }))
+                }}
+                className="w-full rounded-lg border border-stone-700 bg-stone-950 px-4 py-3 outline-none focus:border-amber-600"
+              >
+                {hotelNames.map((hotelName) => (
+                  <option key={hotelName} value={hotelName}>{hotelName}</option>
+                ))}
+              </select>
+            </label>
+
             <label>
               <span className="mb-2 block text-sm text-stone-400">
                 Коллекция
@@ -653,7 +708,9 @@ function AdminItemFormPage() {
                   Без коллекции
                 </option>
 
-                {collections.map(
+                {collections
+                  .filter((collection) => collection.hotel_name === form.hotelName)
+                  .map(
                   (collection) => (
                     <option
                       key={collection.id}

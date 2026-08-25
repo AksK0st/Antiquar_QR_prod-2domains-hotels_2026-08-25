@@ -19,9 +19,19 @@ esac
 
 cat >&2 <<'WARNING'
 This rolls back APPLICATION IMAGES ONLY. It does not downgrade PostgreSQL.
-Run it only when migrations made since the target release are backward-compatible.
-If they are not, restore a tested backup instead of guessing a DB downgrade.
+The operation is blocked by default because an older application may be incompatible
+with the current database schema or data. Restore a tested backup when compatibility
+is not proven.
 WARNING
+
+if [ "${ALLOW_APP_ONLY_ROLLBACK:-}" != "1" ]; then
+  cat >&2 <<'BLOCKED'
+Blocked: database compatibility with the target release has not been confirmed.
+After verifying the target application is backward-compatible with the CURRENT database,
+rerun with ALLOW_APP_ONLY_ROLLBACK=1.
+BLOCKED
+  exit 1
+fi
 
 RELEASE_TAG="$PREVIOUS_TAG" docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" \
   up -d --no-build --no-deps backend frontend gateway
