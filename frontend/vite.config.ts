@@ -12,6 +12,11 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
 
+    allowedHosts: [
+      'gallery',
+      'mozart',
+    ],
+
     watch: {
       usePolling: true,
     },
@@ -19,7 +24,7 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://backend:8000',
-        changeOrigin: true,
+        changeOrigin: false,
       },
     },
   },

@@ -38,3 +38,14 @@ export function getItemImageByIdUrl(
 ): string {
   return `${API_URL}/images/by-id/${imageId}/v/${contentVersion}`
 }
+
+export function getCollectionBySlug(
+  slug: string,
+  signal?: AbortSignal,
+): Promise<Collection> {
+  return apiFetch<Collection>(
+    `${API_URL}/collections/slug/${encodeURIComponent(slug)}`,
+    {},
+    signal,
+  )
+}

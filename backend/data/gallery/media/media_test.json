@@ -1,0 +1,92 @@
+[
+  {
+    "item_slug": "batashev-samovar",
+    "images": [
+      {
+        "file": "items/batashev-samovar_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      },
+      {
+        "file": "items/batashev-samovar_02.jpg",
+        "sort_order": 1,
+        "is_primary": false
+      }
+    ]
+  },
+  {
+    "item_slug": "manual-coffee-grinder",
+    "images": [
+      {
+        "file": "items/manual-coffee-grinder_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      },
+      {
+        "file": "items/manual-coffee-grinder_02.jpg",
+        "sort_order": 1,
+        "is_primary": false
+      }
+    ]
+  },
+  {
+    "item_slug": "decorative-knives-set",
+    "images": [
+      {
+        "file": "items/decorative-knives-set_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      }
+    ]
+  },
+  {
+    "item_slug": "mechanical-corkscrew",
+    "images": [
+      {
+        "file": "items/mechanical-corkscrew_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      }
+    ]
+  },
+  {
+    "item_slug": "antique-brass-faucet",
+    "images": [
+      {
+        "file": "items/antique-brass-faucet_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      }
+    ]
+  },
+  {
+    "item_slug": "manual-lever-cutter",
+    "images": [
+      {
+        "file": "items/manual-lever-cutter_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      }
+    ]
+  },
+  {
+    "item_slug": "metal-coffee-pot",
+    "images": [
+      {
+        "file": "items/metal-coffee-pot_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      }
+    ]
+  },
+  {
+    "item_slug": "nickel-plated-samovar",
+    "images": [
+      {
+        "file": "items/nickel-plated-samovar_01.jpg",
+        "sort_order": 0,
+        "is_primary": true
+      }
+    ]
+  }
+]

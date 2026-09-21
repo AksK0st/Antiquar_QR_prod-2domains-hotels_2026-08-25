@@ -21,13 +21,28 @@ from services.image_processing import (
 
 
 BASE_DIR = Path(__file__).resolve().parent
-MEDIA_DIR = BASE_DIR / "data" / "media"
-MANIFEST_PATH = MEDIA_DIR / "media.json"
+MEDIA_DIRS = [
+    BASE_DIR / "data" / "gallery" / "media",
+    BASE_DIR / "data" / "mozart" / "media",
+]
 
 
-def load_manifest() -> list[dict]:
-    with MANIFEST_PATH.open("r", encoding="utf-8") as file:
-        return json.load(file)
+def load_manifests() -> list[tuple[Path, dict]]:
+    result = []
+
+    for media_dir in MEDIA_DIRS:
+        manifest_path = media_dir / "media.json"
+
+        if not manifest_path.exists():
+            continue
+
+        with manifest_path.open("r", encoding="utf-8") as file:
+            manifest = json.load(file)
+
+        for item_data in manifest:
+            result.append((media_dir, item_data))
+
+    return result
 
 
 def ensure_bucket() -> None:
@@ -62,12 +77,19 @@ def _content_type_for_path(path: Path) -> str:
     return content_type
 
 
-def ensure_minio_object(relative_path: str) -> tuple[str, str, int, int, int]:
-    file_path = MEDIA_DIR / relative_path
+def ensure_minio_object(
+    media_dir: Path,
+    relative_path: str,
+    hotel_name: str,
+) -> tuple[str, str, int, int, int]:
+
+    file_path = media_dir / relative_path
+
     if not file_path.exists():
         raise FileNotFoundError(f"Media file not found: {file_path}")
 
     content_type = _content_type_for_path(file_path)
+
     try:
         processed = process_image(
             file_path.read_bytes(),
@@ -76,16 +98,27 @@ def ensure_minio_object(relative_path: str) -> tuple[str, str, int, int, int]:
         )
     except (InvalidImageError, ImageTooLargeError) as exc:
         raise RuntimeError(f"Invalid seed media {file_path}: {exc}") from exc
+
     if processed.size > settings.admin_image_max_bytes:
         raise RuntimeError(
-            f"Sanitized seed media exceeds {settings.admin_image_max_bytes} bytes: {file_path}"
+            f"Sanitized seed media exceeds "
+            f"{settings.admin_image_max_bytes} bytes: {file_path}"
         )
 
-    # Keep manifest object names stable, but always overwrite seed objects with
-    # sanitized bytes. This also upgrades objects created by older seed code
-    # that stored the original file (including EXIF metadata).
-    object_name = relative_path.replace("\\", "/")
+    # Отдельный namespace в MinIO для каждой гостиницы.
+    hotel_prefix = (
+        "mozart"
+        if hotel_name == "Моцарт"
+        else "gallery"
+    )
+
+    object_name = (
+        f"{hotel_prefix}/"
+        f"{relative_path.replace(chr(92), '/')}"
+    )
+
     existed = object_exists(object_name)
+
     minio_client.put_object(
         bucket_name=MINIO_BUCKET,
         object_name=object_name,
@@ -93,7 +126,11 @@ def ensure_minio_object(relative_path: str) -> tuple[str, str, int, int, int]:
         length=processed.size,
         content_type=processed.content_type,
     )
-    print(f"[MINIO {'UPDATE' if existed else 'UPLOAD'}] {object_name}")
+
+    print(
+        f"[MINIO {'UPDATE' if existed else 'UPLOAD'}] "
+        f"{object_name}"
+    )
 
     return (
         object_name,
@@ -104,13 +141,26 @@ def ensure_minio_object(relative_path: str) -> tuple[str, str, int, int, int]:
     )
 
 
-async def get_item(db: AsyncSession, item_slug: str) -> Item:
-    result = await db.execute(select(Item).where(Item.slug == item_slug))
+async def get_item(
+    db: AsyncSession,
+    item_slug: str,
+    hotel_name: str,
+) -> Item:
+    result = await db.execute(
+        select(Item).where(
+            Item.slug == item_slug,
+            Item.hotel_name == hotel_name,
+        )
+    )
+
     item = result.scalar_one_or_none()
+
     if item is None:
         raise RuntimeError(
-            f"Item '{item_slug}' not found. Run seed.py before minio_seed.py."
+            f"Item '{item_slug}' not found for hotel '{hotel_name}'. "
+            "Run seed.py before minio_seed.py."
         )
+
     return item
 
 
@@ -131,14 +181,16 @@ async def ensure_image_record(
     )
     existing = result.scalar_one_or_none()
     if existing is not None:
-        # Backfill metadata for records created before image normalization existed.
+        existing.item_id = item.id
+        existing.original_filename = original_filename
         existing.content_type = content_type
         existing.size = size
         existing.width = width
         existing.height = height
-        # Seed objects are deliberately overwritten with sanitized bytes, so
-        # advance the cache key even when dimensions/size happen to be equal.
-        existing.content_version += 1
+        existing.sort_order = sort_order
+        existing.is_primary = is_primary
+        existing.content_version = (existing.content_version or 0) + 1
+
         print(f"[DB UPDATE] {object_name}")
         return
 
@@ -158,15 +210,34 @@ async def ensure_image_record(
 
 
 async def seed_media(db: AsyncSession) -> None:
-    manifest = load_manifest()
-    for item_data in manifest:
-        item = await get_item(db, item_data["item_slug"])
+    manifests = load_manifests()
+
+    for media_dir, item_data in manifests:
+        hotel_name = item_data.get("hotel_name", "Галерея")
+
+        item = await get_item(
+            db,
+            item_data["item_slug"],
+            hotel_name,
+        )
+
         for image_data in item_data["images"]:
             relative_path = image_data["file"]
-            object_name, content_type, size, width, height = ensure_minio_object(
-                relative_path
+
+            (
+                object_name,
+                content_type,
+                size,
+                width,
+                height,
+            ) = ensure_minio_object(
+                media_dir,
+                relative_path,
+                hotel_name,
             )
-            file_path = MEDIA_DIR / relative_path
+
+            file_path = media_dir / relative_path
+
             await ensure_image_record(
                 db=db,
                 item=item,
@@ -179,7 +250,10 @@ async def seed_media(db: AsyncSession) -> None:
                 sort_order=image_data.get("sort_order", 0),
                 is_primary=image_data.get("is_primary", False),
             )
-    await db.commit()
+
+        # Коммитим каждый предмет отдельно.
+        # Ошибка в Mozart больше не откатит уже обработанную Gallery.
+        await db.commit()
 
 
 async def main() -> None:

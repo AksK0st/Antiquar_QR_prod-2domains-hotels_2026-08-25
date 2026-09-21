@@ -15,13 +15,21 @@ DATA_DIR = BASE_DIR / "data"
 
 
 def load_json(filename: str) -> list[dict]:
-    path = DATA_DIR / filename
+    paths = [
+        DATA_DIR / "gallery" / filename,
+        DATA_DIR / "mozart" / filename,
+    ]
 
-    with path.open(
-        "r",
-        encoding="utf-8",
-    ) as file:
-        return json.load(file)
+    result = []
+
+    for path in paths:
+        if not path.exists():
+            continue
+
+        with path.open("r", encoding="utf-8") as file:
+            result.extend(json.load(file))
+
+    return result
 
 
 async def seed_collections(

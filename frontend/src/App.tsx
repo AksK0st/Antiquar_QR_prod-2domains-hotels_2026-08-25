@@ -15,6 +15,7 @@ import AdminItemsPage from './admin/pages/AdminItemsPage'
 import AdminItemFormPage from './admin/pages/AdminItemFormPage'
 import AdminCollectionsPage from './admin/pages/AdminCollectionsPage'
 import AdminCollectionFormPage from './admin/pages/AdminCollectionFormPage'
+import CollectionPage from "./pages/CollectionPage.tsx";
 
 
 function App() {
@@ -26,6 +27,10 @@ function App() {
           element={<HomePage />}
         />
 
+        <Route
+          path="/c/:slug"
+          element={<CollectionPage />}
+        />
         <Route
           path="/items/:slug"
           element={<ItemPage />}

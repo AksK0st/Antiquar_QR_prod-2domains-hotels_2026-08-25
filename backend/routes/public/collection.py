@@ -28,6 +28,31 @@ async def get_collections(
     )
     return result.scalars().all()
 
+@router.get("/slug/{collection_slug}", response_model=PublicCollectionRead)
+async def get_collection_by_slug(
+    collection_slug: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    hotel_name = hotel_name_for_request(request)
+
+    collection = (
+        await db.execute(
+            select(Collection).where(
+                Collection.slug == collection_slug,
+                Collection.hotel_name == hotel_name,
+            )
+        )
+    ).scalar_one_or_none()
+
+    if collection is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Collection not found",
+        )
+
+    return collection
+
 
 @router.get("/{collection_id}", response_model=PublicCollectionRead)
 async def get_collection(
