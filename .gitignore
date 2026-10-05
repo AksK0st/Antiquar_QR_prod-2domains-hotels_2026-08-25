@@ -26,6 +26,7 @@ backend/qr_codes/
 backend/data
 backups/
 .backup.sh
+.upload.sh
 
 # OS
 .DS_Store
