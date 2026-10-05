@@ -31,3 +31,4 @@ backups/
 # OS
 .DS_Store
 Thumbs.db
+/upload.sh
