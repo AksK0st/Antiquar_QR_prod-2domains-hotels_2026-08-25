@@ -89,6 +89,8 @@ services:
     command: >
       sh -c "
       alembic upgrade head &&
+      python seed.py &&
+      python minio_seed.py &&
       uvicorn main:app --host 0.0.0.0 --port 8000 --reload
       "
 

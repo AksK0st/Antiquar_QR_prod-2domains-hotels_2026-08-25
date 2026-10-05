@@ -5,25 +5,17 @@ import {
   useState,
 } from 'react'
 
-import {
-  getItemImageByIdUrl,
-} from '../api/api'
+import type { TouchEvent } from 'react'
 
-import type {
-  ItemImage,
-} from '../types/item'
-
+import { getItemImageByIdUrl } from '../api/api'
+import type { ItemImage } from '../types/item'
 
 interface ItemGalleryProps {
   name: string
   images: ItemImage[]
 }
 
-
-function ItemGallery({
-  name,
-  images,
-}: ItemGalleryProps) {
+function ItemGallery({ name, images }: ItemGalleryProps) {
   const sortedImages = useMemo(
     () =>
       [...images].sort(
@@ -36,26 +28,19 @@ function ItemGallery({
 
   const primaryIndex = Math.max(
     0,
-    sortedImages.findIndex(
-      (image) => image.is_primary,
-    ),
+    sortedImages.findIndex((image) => image.is_primary),
   )
 
-  const [activeIndex, setActiveIndex] =
-    useState(primaryIndex)
-
-  const touchStartX =
-    useRef<number | null>(null)
-
+  const [activeIndex, setActiveIndex] = useState(primaryIndex)
+  const touchStartX = useRef<number | null>(null)
 
   useEffect(() => {
     setActiveIndex(primaryIndex)
   }, [primaryIndex])
 
-
   if (sortedImages.length === 0) {
     return (
-      <div className="flex min-h-[420px] items-center justify-center bg-[#d9d0c2] p-8">
+      <div className="flex min-h-[280px] items-center justify-center bg-[#d9d0c2] p-8 sm:min-h-[420px]">
         <p className="text-sm text-[#756e65]">
           Фотография пока не добавлена
         </p>
@@ -63,63 +48,46 @@ function ItemGallery({
     )
   }
 
+  const visibleIndex =
+    activeIndex >= 0 && activeIndex < sortedImages.length
+      ? activeIndex
+      : primaryIndex
 
-  const activeImage =
-    sortedImages[activeIndex]
-
-  const hasMultipleImages =
-    sortedImages.length > 1
-
+  const activeImage = sortedImages[visibleIndex]
+  const hasMultipleImages = sortedImages.length > 1
 
   function showPrevious() {
-    setActiveIndex((current) =>
-      current === 0
+    setActiveIndex(
+      visibleIndex === 0
         ? sortedImages.length - 1
-        : current - 1,
+        : visibleIndex - 1,
     )
   }
-
 
   function showNext() {
-    setActiveIndex((current) =>
-      current ===
-      sortedImages.length - 1
+    setActiveIndex(
+      visibleIndex === sortedImages.length - 1
         ? 0
-        : current + 1,
+        : visibleIndex + 1,
     )
   }
 
-
-  function handleTouchStart(
-    event: React.TouchEvent,
-  ) {
-    touchStartX.current =
-      event.touches[0].clientX
+  function handleTouchStart(event: TouchEvent<HTMLDivElement>) {
+    touchStartX.current = event.touches[0]?.clientX ?? null
   }
 
-
-  function handleTouchEnd(
-    event: React.TouchEvent,
-  ) {
-    if (
-      touchStartX.current === null
-    ) {
-      return
-    }
-
-    const endX =
-      event.changedTouches[0].clientX
-
-    const distance =
-      endX - touchStartX.current
+  function handleTouchEnd(event: TouchEvent<HTMLDivElement>) {
+    const startX = touchStartX.current
+    const endX = event.changedTouches[0]?.clientX
 
     touchStartX.current = null
 
-    /*
-     * Небольшие движения пальца
-     * считаем обычным касанием,
-     * а не свайпом.
-     */
+    if (startX === null || endX === undefined) {
+      return
+    }
+
+    const distance = endX - startX
+
     if (Math.abs(distance) < 50) {
       return
     }
@@ -131,18 +99,27 @@ function ItemGallery({
     }
   }
 
-
   return (
-    <div>
+    <div className="min-w-0">
       <div
-        className="relative bg-[#d9d0c2] p-4 sm:p-8 lg:p-10"
+        className="relative min-w-0 bg-[#d9d0c2] p-4 sm:p-8 lg:p-10"
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={() => {
+          touchStartX.current = null
+        }}
         tabIndex={0}
         aria-label={`Галерея: ${name}`}
         onKeyDown={(event) => {
-          if (event.key === 'ArrowLeft') { event.preventDefault(); showPrevious() }
-          if (event.key === 'ArrowRight') { event.preventDefault(); showNext() }
+          if (event.key === 'ArrowLeft') {
+            event.preventDefault()
+            showPrevious()
+          }
+
+          if (event.key === 'ArrowRight') {
+            event.preventDefault()
+            showNext()
+          }
         }}
       >
         <img
@@ -151,15 +128,16 @@ function ItemGallery({
             activeImage.id,
             activeImage.content_version,
           )}
-          alt={`${name} — фото ${activeIndex + 1}`}
+          alt={`${name} — фото ${visibleIndex + 1}`}
           width={activeImage.width ?? undefined}
           height={activeImage.height ?? undefined}
           className="
             mx-auto
-            max-h-[760px]
-            min-h-[420px]
+            block
+            h-[clamp(280px,65vh,680px)]
             w-full
             object-contain
+            object-center
           "
         />
 
@@ -220,20 +198,21 @@ function ItemGallery({
             <div
               aria-live="polite"
               className="
-              absolute
-              bottom-3
-              right-3
-              rounded-full
-              bg-[#24211d]/85
-              px-3
-              py-1.5
-              text-xs
-              tracking-[0.08em]
-              text-[#f3ede1]
-              sm:bottom-5
-              sm:right-5
-            ">
-              {activeIndex + 1}
+                absolute
+                bottom-3
+                right-3
+                rounded-full
+                bg-[#24211d]/85
+                px-3
+                py-1.5
+                text-xs
+                tracking-[0.08em]
+                text-[#f3ede1]
+                sm:bottom-5
+                sm:right-5
+              "
+            >
+              {visibleIndex + 1}
               {' / '}
               {sortedImages.length}
             </div>
@@ -242,65 +221,54 @@ function ItemGallery({
       </div>
 
       {hasMultipleImages && (
-        <div className="
-          mt-4
-          flex
-          gap-3
-          overflow-x-auto
-          pb-2
-        ">
-          {sortedImages.map(
-            (image, index) => {
-              const isActive =
-                index === activeIndex
+        <div className="mt-4 flex min-w-0 gap-3 overflow-x-auto pb-2">
+          {sortedImages.map((image, index) => {
+            const isActive = index === visibleIndex
 
-              return (
-                <button
-                  key={image.id}
-                  type="button"
-                  onClick={() =>
-                    setActiveIndex(index)
+            return (
+              <button
+                key={image.id}
+                type="button"
+                onClick={() => setActiveIndex(index)}
+                aria-label={`Открыть фотографию ${index + 1}`}
+                aria-pressed={isActive}
+                className={`
+                  h-20
+                  w-24
+                  shrink-0
+                  overflow-hidden
+                  border-2
+                  bg-[#d9d0c2]
+                  transition
+                  ${
+                    isActive
+                      ? 'border-[#896943]'
+                      : 'border-transparent opacity-65 hover:opacity-100'
                   }
-                  aria-label={
-                    `Открыть фотографию ${index + 1}`
-                  }
-                  className={`
-                    h-20
-                    w-24
-                    shrink-0
-                    overflow-hidden
-                    border-2
-                    bg-[#d9d0c2]
-                    transition
-                    ${
-                      isActive
-                        ? 'border-[#896943]'
-                        : 'border-transparent opacity-65 hover:opacity-100'
-                    }
-                  `}
-                >
-                  <img
-                    src={getItemImageByIdUrl(
-                      image.id,
-                      image.content_version,
-                    )}
-                    alt=""
-                    loading="lazy"
-                    className="
-                      h-full
-                      w-full
-                      object-cover
-                    "
-                  />
-                </button>
-              )
-            },
-          )}
+                `}
+              >
+                <img
+                  src={getItemImageByIdUrl(
+                    image.id,
+                    image.content_version,
+                  )}
+                  alt=""
+                  loading="lazy"
+                  className="
+                    block
+                    h-full
+                    w-full
+                    object-contain
+                    object-center
+                  "
+                />
+              </button>
+            )
+          })}
         </div>
       )}
     </div>
   )
 }
-
 
 export default ItemGallery

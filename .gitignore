@@ -23,7 +23,9 @@ frontend/dist/
 
 # Generated
 backend/qr_codes/
+backend/data
 backups/
+.backup.sh
 
 # OS
 .DS_Store

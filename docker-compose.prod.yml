@@ -1,3 +1,5 @@
+name: antiquar
+
 x-logging: &default-logging
   driver: json-file
   options:
@@ -85,7 +87,7 @@ services:
     security_opt: ["no-new-privileges:true"]
 
   minio-init:
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: docker.io/pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       minio:
         condition: service_healthy
@@ -304,7 +306,7 @@ services:
 
   minio-tools:
     profiles: ["maintenance"]
-    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: docker.io/pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     environment:
       MINIO_APP_USER: ${MINIO_APP_USER}
       MINIO_APP_PASSWORD: ${MINIO_APP_PASSWORD}

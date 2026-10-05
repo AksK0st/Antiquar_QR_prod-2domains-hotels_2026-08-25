@@ -213,7 +213,12 @@ async def seed_media(db: AsyncSession) -> None:
     manifests = load_manifests()
 
     for media_dir, item_data in manifests:
-        hotel_name = item_data.get("hotel_name", "Галерея")
+        if media_dir.parent.name == "mozart":
+            hotel_name = "Моцарт"
+        elif media_dir.parent.name == "gallery":
+            hotel_name = "Галерея"
+        else:
+            raise RuntimeError(f"Unknown hotel media directory: {media_dir}")
 
         item = await get_item(
             db,
