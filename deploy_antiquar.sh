@@ -9,27 +9,53 @@ PROJECT_NAME=antiquar
 DEFAULT_BACKUP=/root/backups/2026-10-05_23-26-43
 SNAPSHOT=''
 STAGE=''
+ROLLBACK_ARMED=0
+SERVICES_PAUSED=0
+AUTO_ROLLBACK=${AUTO_ROLLBACK:-1}
+MAIN_PID=$BASHPID
+SCRIPT_PATH="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/$(basename -- "${BASH_SOURCE[0]}")"
 
 die() {
   printf 'ERROR: %s\n' "$*" >&2
-  if [[ -n "$SNAPSHOT" && -f "$SNAPSHOT/READY" ]]; then
-    printf 'Откат: bash /root/deploy_antiquar.sh rollback %q\n' "$SNAPSHOT" >&2
-  fi
-  exit 1
+  abort_deployment 1 "$LINENO"
 }
 log() { printf '\n>>> %s\n' "$*"; }
-on_error() {
-  local rc=$?
-  trap - ERR
-  printf '\nДеплой остановлен, код ошибки %s, строка %s.\n' "$rc" "$1" >&2
-  if [[ -n "$SNAPSHOT" && -f "$SNAPSHOT/READY" ]]; then
+abort_deployment() {
+  local rc=$1 line=$2 rollback_rc
+  # A failed command substitution reports failure to the main shell; only it recovers.
+  if [[ "$BASHPID" != "$MAIN_PID" ]]; then exit "$rc"; fi
+  trap - ERR INT TERM
+  set +e
+  printf '\nДеплой остановлен, код ошибки %s, строка %s.\n' "$rc" "$line" >&2
+  if [[ "$ROLLBACK_ARMED" == 1 && "$AUTO_ROLLBACK" == 1 && "${MODE:-}" != rollback && -f "$SNAPSHOT/READY" ]]; then
+    printf 'Выполняю автоматический откат из %s...\n' "$SNAPSHOT" >&2
+    printf 'failed: rc=%s line=%s\n' "$rc" "$line" > "$SNAPSHOT/FAILED"
+    # The rollback child takes the same lock. No recursive automatic rollback.
+    flock -u 9
+    AUTO_ROLLBACK=0 bash "$SCRIPT_PATH" rollback "$SNAPSHOT" 9>&-
+    rollback_rc=$?
+    if [[ "$rollback_rc" == 0 ]]; then
+      printf 'Автоматический откат завершён и проверен. Деплой новой версии не выполнен.\n' >&2
+    else
+      printf 'Автоматический откат тоже завершился ошибкой %s. Требуется ручное восстановление.\n' "$rollback_rc" >&2
+      printf 'Откат: bash /root/deploy_antiquar.sh rollback %q\n' "$SNAPSHOT" >&2
+    fi
+  elif [[ "$SERVICES_PAUSED" == 1 && "${MODE:-}" != rollback && "$ROLLBACK_ARMED" == 0 ]]; then
+    # Only backup creation has started; production data and code are still unchanged.
+    printf 'Возвращаю прежние сервисы после ошибки создания резервной копии...\n' >&2
+    docker start "$MINIO_ID" >/dev/null && compose_at "$PROJECT" up -d --no-deps backend frontend gateway
+    if [[ "$?" != 0 ]]; then printf 'Не удалось запустить прежние сервисы; проверь контейнеры.\n' >&2; fi
+  elif [[ -n "$SNAPSHOT" && -f "$SNAPSHOT/READY" ]]; then
     printf 'Точка отката: %s\nОткат: bash /root/deploy_antiquar.sh rollback %q\n' "$SNAPSHOT" "$SNAPSHOT" >&2
   else
     printf 'Полная точка отката ещё не создана. Не запускайте восстановление из неполных файлов.\n' >&2
   fi
   exit "$rc"
 }
+on_error() { local rc=$?; abort_deployment "$rc" "$1"; }
 trap 'on_error "$LINENO"' ERR
+trap 'abort_deployment 130 "$LINENO"' INT
+trap 'abort_deployment 143 "$LINENO"' TERM
 
 usage() {
   cat <<'USAGE'
@@ -37,6 +63,12 @@ Deploy latest code and REPLACE database and MinIO data:
   bash /root/deploy_antiquar.sh deploy [backup-directory]
 Deploy code ONLY, keeping existing database and photos:
   bash /root/deploy_antiquar.sh code-only
+Continue this deployment AFTER MinIO has been repaired (replace PostgreSQL only):
+  bash /root/deploy_antiquar.sh resume [backup-directory]
+Continue AFTER PostgreSQL has been restored (keep existing database and MinIO):
+  bash /root/deploy_antiquar.sh start
+Verify an already running version without restarting or restoring data:
+  bash /root/deploy_antiquar.sh verify
 Restore code, database and MinIO from a deployment snapshot:
   bash /root/deploy_antiquar.sh rollback /root/antiquar-rollbacks/<stamp>
 USAGE
@@ -45,7 +77,7 @@ USAGE
 MODE=${1:---help}
 case "$MODE" in
   -h|--help) usage; exit 0 ;;
-  deploy|code-only|rollback) ;;
+  deploy|code-only|rollback|resume|start|verify) ;;
   *) usage; die 'Неизвестный режим' ;;
 esac
 [[ "$EUID" == 0 ]] || die 'Запускай скрипт под root на VPS'
@@ -134,7 +166,10 @@ restore_data() {
   cp -a "$STAGE/minio-data/." "$MINIO_PATH/"
   docker start "$MINIO_ID" >/dev/null
   wait_healthy minio
+  restore_postgres
+}
 
+restore_postgres() {
   log 'Заменяю PostgreSQL данными из бэкапа'
   compose_at "$PROJECT" exec -T db sh -ec \
     'exec psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d postgres -v target_db="$POSTGRES_DB" -v target_owner="$POSTGRES_USER"' <<'SQL'
@@ -152,9 +187,33 @@ start_application() {
   wait_healthy db
   wait_healthy minio
   log 'Настраиваю доступ приложения к MinIO и выполняю миграции'
+  local bucket policy_file
+  # Override the scalar Compose command with explicit shell arguments.
+  bucket=$(compose_at "$PROJECT" run --rm --no-deps --entrypoint /bin/sh minio-init \
+    -ec 'printf "%s" "$MINIO_BUCKET"')
+  [[ "$bucket" =~ ^[a-z0-9][a-z0-9.-]+[a-z0-9]$ ]] || die 'Некорректное имя bucket'
+  policy_file=$(mktemp /root/antiquar-app-policy.XXXXXX)
+  python3 - "$PROJECT/ops/minio/app-policy.template.json" "$policy_file" "$bucket" <<'PY'
+import json, sys
+from pathlib import Path
+text = Path(sys.argv[1]).read_text().replace('__BUCKET__', sys.argv[3])
+json.loads(text)
+Path(sys.argv[2]).write_text(text)
+PY
+  chmod 644 "$policy_file"
+  # Render the policy with Python on the host; no sed is required in the mc image.
   timeout 180 docker compose -p "$PROJECT_NAME" --project-directory "$PROJECT" \
     --env-file "$PROJECT/.env.production" -f "$PROJECT/docker-compose.prod.yml" \
-    run --rm --no-deps minio-init
+    run --rm --no-deps --entrypoint /bin/sh \
+    -v "$policy_file:/tmp/antiquar-app-policy.json:ro" minio-init -ec '
+      mc --config-dir /tmp/mc-init alias set --api S3v4 local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null
+      mc --config-dir /tmp/mc-init ready local >/dev/null
+      mc --config-dir /tmp/mc-init mb --ignore-existing "local/$MINIO_BUCKET"
+      mc --config-dir /tmp/mc-init admin user add local "$MINIO_APP_USER" "$MINIO_APP_PASSWORD"
+      mc --config-dir /tmp/mc-init admin policy create local antiquar-app /tmp/antiquar-app-policy.json
+      mc --config-dir /tmp/mc-init admin policy attach local antiquar-app --user "$MINIO_APP_USER"
+    '
+  rm -f -- "$policy_file"
   compose_at "$PROJECT" run --rm --no-deps migrate
   log 'Запускаю backend и frontend'
   compose_at "$PROJECT" up -d --force-recreate --no-deps backend frontend
@@ -162,8 +221,12 @@ start_application() {
   wait_healthy frontend
   log 'Запускаю gateway'
   compose_at "$PROJECT" up -d --force-recreate --no-deps gateway
+  verify_application
+}
+
+verify_application() {
   # Uses the project's non-destructive reconciliation command, no delete-orphans.
-  compose_at "$PROJECT" exec -T backend python scripts/reconcile_storage.py
+  compose_at "$PROJECT" exec -T -e PYTHONPATH=/backend backend python scripts/reconcile_storage.py
   local domains domain
   domains=$(compose_at "$PROJECT" exec -T gateway sh -ec 'printf "%s\n" "$PRIMARY_DOMAIN" "$SECONDARY_DOMAIN"')
   while IFS= read -r domain; do
@@ -174,6 +237,71 @@ start_application() {
   done <<< "$domains"
   compose_at "$PROJECT" ps
 }
+
+if [[ "$MODE" == verify ]]; then
+  [[ -f "$PROJECT/.env.production" ]] || die 'Нет серверного .env.production'
+  STAMP=$(sed -n 's/^RELEASE_TAG=deploy-//p' "$PROJECT/.env.production")
+  [[ "$STAMP" =~ ^[0-9]{8}-[0-9]{6}$ ]] || die 'Не найдена версия текущего деплоя'
+  SNAPSHOT="/root/antiquar-rollbacks/$STAMP"
+  wait_healthy db
+  wait_healthy minio
+  wait_healthy backend
+  wait_healthy frontend
+  verify_application
+  if [[ -f "$SNAPSHOT/READY" ]]; then printf 'committed\n' > "$SNAPSHOT/COMMITTED"; fi
+  log 'Работающая версия проверена. Деплой завершён.'
+  exit 0
+fi
+
+if [[ "$MODE" == start ]]; then
+  [[ -f "$PROJECT/.env.production" ]] || die 'Нет серверного .env.production'
+  STAMP=$(sed -n 's/^RELEASE_TAG=deploy-//p' "$PROJECT/.env.production")
+  [[ "$STAMP" =~ ^[0-9]{8}-[0-9]{6}$ ]] || die 'Не найдена версия текущего деплоя'
+  SNAPSHOT="/root/antiquar-rollbacks/$STAMP"
+  [[ -f "$SNAPSHOT/READY" ]] || die 'Нет полной точки отката текущего деплоя'
+  [[ ! -f "$SNAPSHOT/COMMITTED" ]] || die 'Этот деплой уже завершён; для следующего обновления используй code-only'
+  compose_at "$PROJECT" config -q
+  ROLLBACK_ARMED=1
+  compose_at "$PROJECT" stop gateway backend frontend
+  start_application
+  printf 'committed\n' > "$SNAPSHOT/COMMITTED"
+  ROLLBACK_ARMED=0
+  SERVICES_PAUSED=0
+  log 'Деплой завершён'
+  printf 'Откат: bash /root/deploy_antiquar.sh rollback %q\n' "$SNAPSHOT"
+  exit 0
+fi
+
+if [[ "$MODE" == resume ]]; then
+  [[ -f "$PROJECT/.env.production" ]] || die 'Нет серверного .env.production'
+  STAMP=$(sed -n 's/^RELEASE_TAG=deploy-//p' "$PROJECT/.env.production")
+  [[ "$STAMP" =~ ^[0-9]{8}-[0-9]{6}$ ]] || die 'Не найдена версия текущего деплоя'
+  SNAPSHOT="/root/antiquar-rollbacks/$STAMP"
+  [[ -f "$SNAPSHOT/READY" ]] || die 'Нет полной точки отката текущего деплоя'
+  [[ ! -f "$SNAPSHOT/COMMITTED" ]] || die 'Этот деплой уже завершён; восстановление через resume запрещено'
+  (cd "$SNAPSHOT" && sha256sum -c SHA256SUMS)
+  SOURCE=${2:-$DEFAULT_BACKUP}
+  [[ -s "$SOURCE/postgres.sql.gz" ]] || die 'Не найден PostgreSQL-бэкап'
+  gzip -t "$SOURCE/postgres.sql.gz"
+  STAGE=$(mktemp -d /root/antiquar-resume.XXXXXX)
+  gzip -dc "$SOURCE/postgres.sql.gz" > "$STAGE/postgres.sql"
+  [[ -s "$STAGE/postgres.sql" ]] || die 'SQL-бэкап пуст'
+  compose_at "$PROJECT" config -q
+  wait_healthy minio
+  wait_healthy db
+  log 'Продолжаю деплой после исправления MinIO'
+  ROLLBACK_ARMED=1
+  compose_at "$PROJECT" stop gateway backend frontend
+  restore_postgres
+  start_application
+  printf 'committed\n' > "$SNAPSHOT/COMMITTED"
+  ROLLBACK_ARMED=0
+  SERVICES_PAUSED=0
+  rm -rf -- "$STAGE"
+  log 'Деплой завершён'
+  printf 'Откат: bash /root/deploy_antiquar.sh rollback %q\n' "$SNAPSHOT"
+  exit 0
+fi
 
 if [[ "$MODE" == rollback ]]; then
   SNAPSHOT=${2:?Укажи папку точки отката}
@@ -203,6 +331,7 @@ if [[ "$MODE" == rollback ]]; then
   restore_data
   start_application
   rm -rf -- "$STAGE"
+  printf 'rolled back\n' > "$SNAPSHOT/ROLLED_BACK"
   log 'Откат выполнен. Проверь вход в админку и фотографии карточек.'
   exit 0
 fi
@@ -249,6 +378,7 @@ for service in backend frontend; do
 done
 
 log 'Останавливаю запись и создаю резервную копию текущих данных'
+SERVICES_PAUSED=1
 compose_at "$PROJECT" stop gateway backend frontend
 compose_at "$PROJECT" exec -T db sh -ec \
   'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --no-owner --no-acl' \
@@ -261,6 +391,7 @@ docker start "$MINIO_ID" >/dev/null
 wait_healthy minio
 (cd "$SNAPSHOT" && sha256sum postgres.sql.gz minio.tar.gz > SHA256SUMS)
 printf 'complete\n' > "$SNAPSHOT/READY"
+ROLLBACK_ARMED=1
 
 log 'Переключаю код на новую версию'
 mv "$PROJECT" "$OLD_PROJECT"
@@ -269,6 +400,9 @@ if [[ "$MODE" == deploy ]]; then
   restore_data
 fi
 start_application
+printf 'committed\n' > "$SNAPSHOT/COMMITTED"
+ROLLBACK_ARMED=0
+SERVICES_PAUSED=0
 if [[ -n "$STAGE" ]]; then
   rm -rf -- "$STAGE"
 fi
